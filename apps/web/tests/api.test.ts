@@ -584,3 +584,51 @@ describe('a phone that travels', () => {
     }
   })
 })
+
+describe('the core loop announces itself and does not lose your photo', () => {
+  /*
+   * The two longest and most fragile moments in the product both happen inside
+   * the meal flow: the seconds a vision model takes, and whatever happens if it
+   * fails.
+   */
+  async function mealFlow(): Promise<string> {
+    const { readFileSync } = await import('node:fs')
+    return readFileSync('src/screens/MealFlow.tsx', 'utf8')
+  }
+
+  test('the wait and the result are announced', async () => {
+    const source = await mealFlow()
+
+    // Live regions were added for chat and coach and missed here — the primary
+    // loop, and the longest wait in the product. Somebody using a screen reader
+    // was told nothing between taking a photo and being asked a question.
+    const reading = source.slice(source.indexOf("stage.name === 'reading'"))
+    expect(reading.slice(0, 260)).toMatch(/role="status"/)
+
+    const result = source.slice(source.indexOf("stage.name === 'result'"))
+    expect(result.slice(0, 260)).toMatch(/role="status"/)
+  })
+
+  test('a failure retries the request, not the photograph', async () => {
+    const source = await mealFlow()
+
+    // Sending somebody back to the camera means re-photographing food they may
+    // already be eating, over what was usually a dropped connection.
+    expect(source).toMatch(/lastInput/)
+    const errorStage = source.slice(source.indexOf("stage.name === 'error'"))
+    expect(errorStage.slice(0, 600)).toMatch(/retry\(\)/)
+
+    // And taking a new photo stays available, because sometimes the picture
+    // really was the problem.
+    expect(errorStage.slice(0, 600)).toMatch(/Take another photo/)
+  })
+
+  test('the failure message is written for a person', async () => {
+    const source = await mealFlow()
+
+    // error.message is the server's sentence for a 4xx and a bare status line
+    // for anything else. Only the first is worth showing.
+    expect(source).toMatch(/readableError/)
+    expect(source).not.toMatch(/message: error instanceof Error \? error\.message/)
+  })
+})

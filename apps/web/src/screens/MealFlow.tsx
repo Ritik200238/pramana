@@ -9,6 +9,7 @@
 
 import { useCallback, useRef, useState } from 'react'
 import {
+  ApiError,
   api,
   enqueue,
   isBlocked,
@@ -40,10 +41,37 @@ export interface MealFlowProps {
   onLogged: () => void
 }
 
+/**
+ * Something worth showing a person.
+ *
+ * The server writes a better sentence than we can for what it knows about —
+ * being rate limited, most often. Anything else gets a plain one rather than a
+ * status line off the wire.
+ */
+function readableError(error: unknown): string {
+  return (
+    (error instanceof ApiError && error.userMessage) ||
+    'That did not go through. Your photo is still here.'
+  )
+}
+
 export function MealFlow({ onClose, onLogged }: MealFlowProps) {
   const [stage, setStage] = useState<Stage>({ name: 'capture' })
   const [text, setText] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
+
+  /**
+   * What was last sent to be read.
+   *
+   * Kept so that "try again" retries the request rather than the photograph.
+   * Sending the user back to the camera after a failure means re-photographing
+   * food they may already be eating, over something that was usually a dropped
+   * connection — the plate has moved, the light has changed, and the failure
+   * was never theirs.
+   */
+  const lastInput = useRef<{ kind: 'photo'; dataUrl: string } | { kind: 'text'; body: string } | null>(
+    null,
+  )
 
   const commit = useCallback(
     async (draft: DraftResponse, answers: Answer[], source: 'photo' | 'text' = 'photo') => {
@@ -85,6 +113,7 @@ export function MealFlow({ onClose, onLogged }: MealFlowProps) {
       setStage({ name: 'reading' })
       try {
         const dataUrl = await toDataUrl(file)
+        lastInput.current = { kind: 'photo', dataUrl }
         const result = await api.draftMeal(dataUrl)
 
         if (isBlocked(result)) {
@@ -105,10 +134,7 @@ export function MealFlow({ onClose, onLogged }: MealFlowProps) {
 
         setStage({ name: 'questions', draft: result, index: 0, answers: [], source: 'photo' })
       } catch (error) {
-        setStage({
-          name: 'error',
-          message: error instanceof Error ? error.message : 'Something went wrong.',
-        })
+        setStage({ name: 'error', message: readableError(error) })
       }
     },
     [commit],
@@ -117,6 +143,7 @@ export function MealFlow({ onClose, onLogged }: MealFlowProps) {
   const onText = useCallback(
     async (description: string) => {
       setStage({ name: 'reading' })
+      lastInput.current = { kind: 'text', body: description }
       try {
         const result = await api.draftMealText(description)
 
@@ -138,14 +165,42 @@ export function MealFlow({ onClose, onLogged }: MealFlowProps) {
         }
         setStage({ name: 'questions', draft: result, index: 0, answers: [], source: 'text' })
       } catch (error) {
-        setStage({
-          name: 'error',
-          message: error instanceof Error ? error.message : 'Something went wrong.',
-        })
+        setStage({ name: 'error', message: readableError(error) })
       }
     },
     [commit],
   )
+
+  /** Send the same thing again. The failure was almost never the picture. */
+  const retry = useCallback(async () => {
+    const input = lastInput.current
+    if (!input) return
+    if (input.kind === 'text') return onText(input.body)
+
+    setStage({ name: 'reading' })
+    try {
+      const result = await api.draftMeal(input.dataUrl)
+      if (isBlocked(result)) {
+        setStage({
+          name: 'blocked',
+          message: result.message,
+          ...(result.helpline ? { helpline: result.helpline } : {}),
+        })
+        return
+      }
+      if (isNotFood(result)) {
+        setStage({ name: 'notfood', message: result.message })
+        return
+      }
+      if (result.questions.length === 0) {
+        await commit(result, [])
+        return
+      }
+      setStage({ name: 'questions', draft: result, index: 0, answers: [], source: 'photo' })
+    } catch (error) {
+      setStage({ name: 'error', message: readableError(error) })
+    }
+  }, [commit, onText])
 
   const answer = useCallback(
     (question: Question, choice: string) => {
@@ -220,8 +275,13 @@ export function MealFlow({ onClose, onLogged }: MealFlowProps) {
         </div>
       )}
 
+      {/*
+        * Announced, because this is the longest wait in the product — a vision
+        * model takes seconds — and a screen reader user was previously told
+        * nothing at all between taking a photo and being asked a question.
+        */}
       {stage.name === 'reading' && (
-        <div className="stage">
+        <div className="stage" role="status" aria-live="polite">
           <div className="spinner" aria-hidden="true" />
           <p>Reading your plate…</p>
         </div>
@@ -236,8 +296,9 @@ export function MealFlow({ onClose, onLogged }: MealFlowProps) {
         />
       )}
 
+      {/* The payoff, announced for the same reason the wait is. */}
       {stage.name === 'result' && (
-        <div className="stage stage-result">
+        <div className="stage stage-result" role="status" aria-live="polite">
           <div className="result-number">
             <strong>{stage.proteinG}g</strong>
             <span>protein</span>
@@ -264,10 +325,18 @@ export function MealFlow({ onClose, onLogged }: MealFlowProps) {
       )}
 
       {stage.name === 'error' && (
-        <div className="stage">
+        <div className="stage" role="status" aria-live="polite">
           <p>{stage.message}</p>
-          <button type="button" className="primary" onClick={() => setStage({ name: 'capture' })}>
-            Try again
+
+          {/* Retries what was sent, not the photograph. */}
+          {lastInput.current && (
+            <button type="button" className="primary" onClick={() => void retry()}>
+              Try again
+            </button>
+          )}
+
+          <button type="button" className="quiet" onClick={() => setStage({ name: 'capture' })}>
+            Take another photo
           </button>
         </div>
       )}
