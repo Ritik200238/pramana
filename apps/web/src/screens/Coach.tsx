@@ -13,7 +13,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react'
-import { api, isBlocked, type StreakState } from '../lib/api.ts'
+import { ApiError, api, isBlocked, type StreakState } from '../lib/api.ts'
 import { Blocked } from '../components/Blocked.tsx'
 
 type Panel = 'eat' | 'today' | 'week' | 'ask'
@@ -109,8 +109,13 @@ function EatNow({ onBlocked }: BlockHandler) {
       }
       setAnswer(result.suggestion)
       setProteinLeft(result.proteinLeftG)
-    } catch {
-      setError('Could not reach the coach. Try again in a moment.')
+    } catch (caught) {
+      // The server writes a better sentence than we can for the cases it knows
+      // about — being rate limited, most often. Ours is the fallback.
+      setError(
+        (caught instanceof ApiError && caught.userMessage) ||
+          'Could not reach the coach. Try again in a moment.',
+      )
     } finally {
       setBusy(false)
     }
@@ -137,7 +142,11 @@ function EatNow({ onBlocked }: BlockHandler) {
         {busy ? 'Thinking…' : 'Tell me'}
       </button>
 
-      {answer && <div className="answer">{answer}</div>}
+      {answer && (
+        <div className="answer" role="status" aria-live="polite">
+          {answer}
+        </div>
+      )}
       {error && <p className="error">{error}</p>}
     </div>
   )
@@ -162,7 +171,11 @@ function DayLine() {
     <div className="panel">
       <h2>Today</h2>
       {busy && <p className="muted">Looking at your day…</p>}
-      {line && <div className="answer">{line}</div>}
+      {line && (
+        <div className="answer" role="status" aria-live="polite">
+          {line}
+        </div>
+      )}
       {error && <p className="error">{error}</p>}
     </div>
   )
@@ -190,7 +203,11 @@ function WeekReview() {
     <div className="panel">
       <h2>This week</h2>
       {busy && <p className="muted">Adding it up…</p>}
-      {review && <div className="answer">{review}</div>}
+      {review && (
+        <div className="answer" role="status" aria-live="polite">
+          {review}
+        </div>
+      )}
       {/* Not enough data is a normal state, not a failure. Inventing a review
           from two data points would be worse than saying so. */}
       {!review && message && <p className="muted">{message}</p>}
@@ -221,8 +238,11 @@ function AskData({ onBlocked }: BlockHandler) {
       }
       setAnswer(result.answer)
       setNotice(result.notice ?? null)
-    } catch {
-      setAnswer('Could not reach your records just now.')
+    } catch (caught) {
+      setAnswer(
+        (caught instanceof ApiError && caught.userMessage) ||
+          'Could not reach your records just now.',
+      )
     } finally {
       setBusy(false)
     }
@@ -270,7 +290,11 @@ function AskData({ onBlocked }: BlockHandler) {
         ))}
       </div>
 
-      {answer && <div className="answer">{answer}</div>}
+      {answer && (
+        <div className="answer" role="status" aria-live="polite">
+          {answer}
+        </div>
+      )}
       {notice && (
         <p className="turn-notice" role="note">
           {notice}

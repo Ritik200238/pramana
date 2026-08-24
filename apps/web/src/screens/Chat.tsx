@@ -117,7 +117,15 @@ export function Chat() {
 
   return (
     <section className="chat">
-      <div className="thread">
+      {/*
+        * Announced politely, so a reply reaches somebody using a screen reader
+        * at all. Without this the coach answers into silence: the text arrives
+        * on screen and nothing tells them it did.
+        *
+        * `polite` rather than `assertive` — an answer is worth hearing at the
+        * next pause, not worth cutting them off mid-sentence.
+        */}
+      <div className="thread" aria-live="polite" aria-atomic="false">
         {turns.length === 0 && (
           <div className="chat-empty">
             <p>Tell me anything — how you slept, what you did, how you feel.</p>

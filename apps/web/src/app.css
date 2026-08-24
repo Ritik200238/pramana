@@ -373,13 +373,36 @@ body {
   }
 }
 
+/*
+ * Reduced motion.
+ *
+ * Slowing the spinner was not enough: the setting is a medical accommodation
+ * for people for whom movement causes nausea or dizziness, so animation stops
+ * rather than becomes leisurely. The spinner keeps a slow pulse instead of
+ * freezing, because a still spinner reads as a hung app.
+ */
 @media (prefers-reduced-motion: reduce) {
-  .spinner {
-    animation-duration: 2.4s;
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 
-  * {
-    scroll-behavior: auto !important;
+  .spinner {
+    animation: pulse 1.6s ease-in-out infinite !important;
+  }
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
   }
 }
 
@@ -1137,4 +1160,48 @@ body {
   margin: 0;
   font-size: 14px;
   line-height: 1.5;
+}
+
+/* ------------------------------------------------------------------- focus */
+
+/*
+ * One rule for everything focusable.
+ *
+ * Focus styling was previously per-component, which meant most controls had
+ * none: tabbing through the app, focus simply disappeared for several stops.
+ * A keyboard or switch user cannot use an interface they cannot locate
+ * themselves in, and the components that happened to have a style were not the
+ * ones that needed it most.
+ *
+ * `:focus-visible` rather than `:focus`, so a tap does not leave a ring behind
+ * on touch — which is what made people remove these rules in the first place.
+ */
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* The capture button is a circle; a rectangular ring around it looks broken. */
+.capture:focus-visible {
+  outline-offset: 3px;
+  border-radius: 50%;
+}
+
+/*
+ * Windows high-contrast mode replaces the palette entirely, and an outline
+ * declared in a custom property disappears with it.
+ */
+@media (forced-colors: active) {
+  :where(a, button, input, select, textarea, [tabindex]):focus-visible {
+    outline: 2px solid Highlight;
+  }
+}
+
+/* Nothing focusable may be smaller than a fingertip. */
+.tab,
+.panel-tab,
+.chip-button,
+.quiet {
+  min-height: var(--tap);
 }
