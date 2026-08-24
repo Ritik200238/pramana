@@ -1,0 +1,1052 @@
+/*
+ * Dark by default, because this app is opened at a dinner table at 9pm far more
+ * often than at a desk at noon.
+ *
+ * Amber rather than the green every health app reaches for: green reads as a
+ * verdict — pass or fail — and this product deliberately does not grade anyone.
+ * The traffic-light palette is reserved for confidence, where it means
+ * something specific.
+ */
+
+:root {
+  --ink: #f2f0ec;
+  --ink-2: #a7a49e;
+  --ink-3: #6f6d68;
+  --bg: #14181c;
+  --surface: #1c2126;
+  --surface-2: #242a30;
+  --line: #2c3238;
+  --accent: #e8b04b;
+  --accent-ink: #14181c;
+  --good: #5bb87f;
+  --warn: #e8b04b;
+  --bad: #e07a66;
+
+  --radius: 14px;
+  --tap: 48px;
+
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-size: 17px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior-y: none;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.muted {
+  color: var(--ink-2);
+}
+
+/* ---------------------------------------------------------------- shell */
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.main {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px 18px 90px;
+}
+
+.banner {
+  background: var(--surface-2);
+  color: var(--ink-2);
+  font-size: 14px;
+  padding: 10px 18px;
+  text-align: center;
+}
+
+.tabs {
+  position: fixed;
+  inset: auto 0 0 0;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px calc(10px + env(safe-area-inset-bottom));
+  background: color-mix(in srgb, var(--bg) 92%, transparent);
+  backdrop-filter: blur(12px);
+  border-top: 1px solid var(--line);
+}
+
+.tab {
+  min-height: var(--tap);
+  background: none;
+  border: 0;
+  color: var(--ink-3);
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.tab-on {
+  color: var(--ink);
+}
+
+.capture {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  border: 0;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 26px;
+  cursor: pointer;
+  box-shadow: 0 6px 20px -6px rgb(232 176 75 / 55%);
+}
+
+/* ---------------------------------------------------------------- today */
+
+.eyebrow {
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  margin: 0 0 14px;
+}
+
+.hero {
+  display: flex;
+  justify-content: center;
+  padding: 12px 0 26px;
+}
+
+.ring {
+  --size: 210px;
+  width: var(--size);
+  height: var(--size);
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: conic-gradient(
+    var(--accent) calc(var(--pct) * 1%),
+    var(--surface-2) calc(var(--pct) * 1%)
+  );
+}
+
+.ring-inner {
+  width: calc(var(--size) - 28px);
+  height: calc(var(--size) - 28px);
+  border-radius: 50%;
+  background: var(--bg);
+  display: grid;
+  place-content: center;
+  text-align: center;
+}
+
+.ring-inner strong {
+  display: block;
+  font-size: 44px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.ring-inner span {
+  display: block;
+  margin-top: 6px;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1px;
+  margin: 0;
+  background: var(--line);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.stats > div {
+  background: var(--surface);
+  padding: 14px 12px;
+  text-align: center;
+}
+
+.stats dt {
+  font-size: 12px;
+  color: var(--ink-3);
+  margin-bottom: 4px;
+}
+
+.stats dd {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.notes,
+.empty {
+  margin-top: 20px;
+  padding: 16px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.notes p {
+  margin: 0 0 8px;
+  font-size: 14px;
+  color: var(--ink-2);
+}
+
+.notes p:last-child {
+  margin-bottom: 0;
+}
+
+.empty {
+  text-align: center;
+}
+
+/* ------------------------------------------------------------ meal flow */
+
+.sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  padding: 20px 18px calc(20px + env(safe-area-inset-bottom));
+}
+
+.sheet-close {
+  align-self: flex-end;
+  width: var(--tap);
+  height: var(--tap);
+  background: none;
+  border: 0;
+  color: var(--ink-2);
+  font-size: 20px;
+  cursor: pointer;
+}
+
+.stage {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 16px;
+  text-align: center;
+}
+
+.stage h2 {
+  margin: 0;
+  font-size: 26px;
+  line-height: 1.2;
+  text-wrap: balance;
+}
+
+.step {
+  font-size: 13px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  margin: 0;
+}
+
+.options {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.option {
+  min-height: 56px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  color: var(--ink);
+  font-size: 17px;
+  cursor: pointer;
+}
+
+.option:hover,
+.option:focus-visible {
+  border-color: var(--accent);
+}
+
+.option-on {
+  border-color: var(--accent);
+  background: var(--surface-2);
+}
+
+.primary {
+  min-height: 54px;
+  padding: 0 24px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  border: 0;
+  border-radius: var(--radius);
+  font-size: 17px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.primary.big {
+  min-height: 62px;
+  font-size: 19px;
+}
+
+.primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.quiet {
+  min-height: var(--tap);
+  background: none;
+  border: 0;
+  color: var(--ink-2);
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.result-number strong {
+  display: block;
+  font-size: 60px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.result-number span {
+  display: block;
+  margin-top: 6px;
+  color: var(--ink-2);
+}
+
+.result-kcal {
+  margin: 0;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.spinner {
+  width: 36px;
+  height: 36px;
+  margin: 0 auto;
+  border: 3px solid var(--line);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation-duration: 2.4s;
+  }
+
+  * {
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ----------------------------------------------------------- confidence */
+
+.confidence {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 16px;
+  border-radius: var(--radius);
+  background: var(--surface);
+  border: 1px solid var(--line);
+}
+
+.confidence-head {
+  font-weight: 600;
+  font-size: 15px;
+}
+
+.confidence-explain {
+  font-size: 13px;
+  color: var(--ink-2);
+}
+
+.confidence-exact .confidence-head {
+  color: var(--good);
+}
+
+.confidence-confirmed .confidence-head {
+  color: var(--warn);
+}
+
+.confidence-rough .confidence-head {
+  color: var(--bad);
+}
+
+/* ----------------------------------------------------------------- chat */
+
+.chat {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.thread {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-bottom: 12px;
+}
+
+.chat-empty {
+  margin: auto 0;
+  text-align: center;
+  color: var(--ink-2);
+}
+
+.turn {
+  max-width: 85%;
+  padding: 12px 15px;
+  border-radius: var(--radius);
+}
+
+.turn p {
+  margin: 0;
+}
+
+.turn-user {
+  align-self: flex-end;
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.turn-assistant {
+  align-self: flex-start;
+  background: var(--surface);
+  border: 1px solid var(--line);
+}
+
+.turn-notice {
+  margin-top: 10px !important;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+  font-size: 14px;
+  color: var(--warn);
+}
+
+/* What was understood, shown quietly. Never a confirmation dialog. */
+.understood {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 10px 0 0;
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.understood li {
+  display: flex;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--ink-3);
+}
+
+.fact-kind {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 10px;
+  padding-top: 2px;
+  color: var(--ink-3);
+}
+
+.typing {
+  color: var(--ink-3);
+  letter-spacing: 0.2em;
+}
+
+.composer {
+  display: flex;
+  gap: 8px;
+  padding: 10px 0 0;
+  border-top: 1px solid var(--line);
+}
+
+.composer input {
+  flex: 1;
+  min-height: var(--tap);
+  padding: 0 14px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  color: var(--ink);
+  font-size: 16px; /* 16px stops iOS zooming the viewport on focus */
+}
+
+.composer input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.send {
+  min-height: var(--tap);
+  padding: 0 18px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  border: 0;
+  border-radius: var(--radius);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.send:disabled {
+  opacity: 0.4;
+}
+
+/* ------------------------------------------------------------- blocked */
+
+.blocked {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 22px;
+  height: 100%;
+  padding: 28px 22px;
+  text-align: center;
+}
+
+.blocked-message {
+  font-size: 18px;
+  line-height: 1.55;
+  margin: 0;
+}
+
+.helpline {
+  display: block;
+  padding: 20px;
+  background: var(--surface);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.helpline strong {
+  display: block;
+  font-size: 32px;
+  letter-spacing: 0.04em;
+}
+
+.helpline span {
+  display: block;
+  margin-top: 6px;
+  font-size: 14px;
+  color: var(--ink-2);
+}
+
+/* --------------------------------------------------------- onboarding */
+
+.onboarding {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 32px 22px calc(32px + env(safe-area-inset-bottom));
+}
+
+.onboard-head h1 {
+  margin: 0 0 8px;
+  font-size: 30px;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+
+.onboard-head p {
+  margin: 0;
+}
+
+.progress {
+  height: 3px;
+  background: var(--surface-2);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.progress span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.25s ease;
+}
+
+.choice-inline {
+  text-align: left;
+}
+
+.choice-inline h2 {
+  font-size: 14px;
+  color: var(--ink-3);
+  font-weight: 600;
+}
+
+.choice-inline .options {
+  flex-direction: row;
+}
+
+.choice-inline .option {
+  flex: 1;
+  min-height: var(--tap);
+}
+
+.fields {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  text-align: left;
+}
+
+.field {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.field span {
+  color: var(--ink-2);
+}
+
+.field input {
+  width: 90px;
+  padding: 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+  font-size: 16px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.field em {
+  font-style: normal;
+  color: var(--ink-3);
+  font-size: 14px;
+  min-width: 38px;
+}
+
+.error {
+  color: var(--bad);
+  text-align: center;
+}
+
+/* ------------------------------------------------- proactive, usuals, list */
+
+/*
+ * The proactive card. At most one a day, only on a specific personal trigger,
+ * never at night. It looks like something worth reading rather than a
+ * notification, because a generic nudge is the thing users call spam.
+ */
+.nudge {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  text-align: left;
+  padding: 14px 16px;
+  margin-bottom: 18px;
+  background: var(--surface);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+}
+
+.nudge-text {
+  line-height: 1.45;
+}
+
+.nudge-go {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.day-confidence {
+  display: flex;
+  justify-content: center;
+  margin-top: 16px;
+}
+
+/* R4's payoff, made visible: a meal eaten before is one tap and no questions. */
+.usuals,
+.meal-list {
+  margin-top: 26px;
+}
+
+.usuals h2,
+.meal-list h2 {
+  margin: 0 0 12px;
+  font-size: 13px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  font-weight: 600;
+}
+
+.usual-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.usual {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas:
+    'label action'
+    'meta  action';
+  gap: 2px 12px;
+  align-items: center;
+  padding: 14px 16px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.usual:hover:not(:disabled),
+.usual:focus-visible {
+  border-color: var(--accent);
+}
+
+.usual:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+.usual-label {
+  grid-area: label;
+  font-weight: 600;
+}
+
+.usual-meta {
+  grid-area: meta;
+  font-size: 13px;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.usual-action {
+  grid-area: action;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.meal-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.meal-row:last-child {
+  border-bottom: none;
+}
+
+.meal-row-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.meal-row-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.meal-row-time {
+  font-size: 13px;
+  color: var(--ink-3);
+}
+
+.meal-row-side {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.meal-row-protein {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.badge {
+  font-size: 12px;
+}
+
+.offline-note {
+  margin-top: 18px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--ink-3);
+}
+
+/* Typing a meal, for when a photo will not work. */
+.text-entry {
+  display: flex;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.text-entry input {
+  flex: 1;
+  min-height: var(--tap);
+  padding: 0 14px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  color: var(--ink);
+  font-size: 16px; /* 16px stops iOS zooming the viewport on focus */
+}
+
+.text-entry input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* -------------------------------------------------------------- coach tab */
+
+/*
+ * Four questions a person actually asks, and nothing else. No charts here —
+ * "once the data is there, it mostly stops at charts" is the complaint this
+ * whole screen exists to answer.
+ */
+.tabs-4 {
+  grid-template-columns: 1fr 1fr auto 1fr;
+}
+
+.streak {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.streak strong {
+  font-size: 24px;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.streak span {
+  color: var(--ink-2);
+}
+
+.streak em {
+  margin-left: auto;
+  font-style: normal;
+  font-size: 12px;
+  color: var(--ink-3);
+}
+
+.panel-tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 18px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.panel-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.panel-tab {
+  flex: 0 0 auto;
+  min-height: 40px;
+  padding: 0 14px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--ink-2);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.panel-tab-on {
+  background: var(--surface-2);
+  border-color: var(--accent);
+  color: var(--ink);
+}
+
+.panel h2 {
+  margin: 0 0 6px;
+  font-size: 20px;
+  letter-spacing: -0.01em;
+}
+
+.panel > .muted {
+  margin: 0 0 14px;
+}
+
+.field-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.field-block span {
+  font-size: 13px;
+  color: var(--ink-2);
+}
+
+.field-block textarea {
+  width: 100%;
+  padding: 12px 14px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  color: var(--ink);
+  font: inherit;
+  font-size: 16px; /* 16px stops iOS zooming the viewport on focus */
+  resize: vertical;
+}
+
+.field-block textarea:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* The answer, presented as something to read rather than a data readout. */
+.answer {
+  margin-top: 16px;
+  padding: 16px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius);
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+.ask-form {
+  display: flex;
+  gap: 8px;
+}
+
+.ask-form input {
+  flex: 1;
+  min-height: var(--tap);
+  padding: 0 14px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  color: var(--ink);
+  font-size: 16px;
+}
+
+.ask-form input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.suggested-questions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.chip-button {
+  padding: 7px 12px;
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--ink-3);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.chip-button:hover,
+.chip-button:focus-visible {
+  border-color: var(--accent);
+  color: var(--ink-2);
+}
+
+/*
+ * A proactive turn is marked so it reads as the coach starting a conversation
+ * rather than replying to something the user forgot saying.
+ */
+.turn-proactive {
+  border-color: var(--accent);
+}
+
+.turn-tag {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent);
+  font-weight: 700;
+}
