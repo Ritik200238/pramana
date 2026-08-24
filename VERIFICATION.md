@@ -19,7 +19,7 @@ Last updated: 2026-08-24.
 |---|---|---|
 | `@ogt/core` — targets, safety, questions | 45 | `npm test -w @ogt/core` |
 | `@ogt/og` — router, storage, payments | 38 | `npm test -w @ogt/og` |
-| `@ogt/api` — services, routes, wiring | 155 | `npm test -w @ogt/api` |
+| `@ogt/api` — services, routes, wiring | 160 | `npm test -w @ogt/api` |
 | `@ogt/api` — end-to-end, idempotency, delivery | 30 | included above |
 | `@ogt/web` — client, offline queue, reachability | 21 | `npm test -w @ogt/web` |
 | `contracts` — Foundry | 108 | `forge test` in `packages/contracts` |
@@ -218,6 +218,30 @@ drawn from research, not an observation.
 
 ---
 
+## Sweeps run, and what each found
+
+Every defect found in this repository has had the same shape: something built
+and correct in isolation that nothing reached. None failed a test, because each
+piece did its own job properly. They are only visible from outside.
+
+| Sweep | Found |
+|---|---|
+| Exported behaviour with no call site | the anchor worker, the coach, `purgeExpired` |
+| Contract functions never called | `CoachAgent` entirely; `grantAccess`; 0G Pay |
+| Columns never written | `record_pub_key` — silently disabling three 0G bindings |
+| API routes with no UI caller | twelve features, including no way to sign out |
+| Route-pattern strings vs real routes | speech transcription with no cost ceiling |
+| Columns never read, config never used | `anchor_address`, and a false security comment |
+
+Guards were left behind for five of the six, each verified by mutation rather
+than assumed — one guard was itself inert on the first attempt and passed while
+detecting nothing, which is the same failure it existed to catch.
+
+The classes not yet swept: error paths no test exercises, and event handlers
+with no emitter. Listing them is not a promise that they are clean.
+
+---
+
 ## An open decision for the product owner
 
 **Record-owning keys are custodial today.** Each user's on-chain account is
@@ -331,7 +355,7 @@ supplies it.
 
 ```bash
 npm install
-npm test --workspaces                      # 259 tests, no network required
+npm test --workspaces                      # 264 tests, no network required
 npm run test:live -w @ogt/og               # 6 live checks; 4 more with a key
 cd packages/contracts && forge test        # 108 tests
 bash script/verify-fork.sh                 # deploy + exercise on forked Galileo
