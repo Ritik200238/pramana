@@ -19,7 +19,7 @@ Last updated: 2026-08-24.
 |---|---|---|
 | `@ogt/core` — targets, safety, questions | 45 | `npm test -w @ogt/core` |
 | `@ogt/og` — router, storage, payments | 38 | `npm test -w @ogt/og` |
-| `@ogt/api` — services, routes, wiring | 160 | `npm test -w @ogt/api` |
+| `@ogt/api` — services, routes, wiring | 166 | `npm test -w @ogt/api` |
 | `@ogt/api` — end-to-end, idempotency, delivery | 30 | included above |
 | `@ogt/web` — client, offline queue, reachability | 21 | `npm test -w @ogt/web` |
 | `contracts` — Foundry | 108 | `forge test` in `packages/contracts` |
@@ -232,13 +232,23 @@ piece did its own job properly. They are only visible from outside.
 | API routes with no UI caller | twelve features, including no way to sign out |
 | Route-pattern strings vs real routes | speech transcription with no cost ceiling |
 | Columns never read, config never used | `anchor_address`, and a false security comment |
+| Error paths no test exercises | two untested refusals; no defect |
+| Events and timers with no counterpart | nothing; all clean |
 
 Guards were left behind for five of the six, each verified by mutation rather
 than assumed — one guard was itself inert on the first attempt and passed while
 detecting nothing, which is the same failure it existed to catch.
 
-The classes not yet swept: error paths no test exercises, and event handlers
-with no emitter. Listing them is not a promise that they are clean.
+The last two classes have now been swept. Error paths: thirteen of seventeen
+(route, status) pairs were already asserted, two were genuinely untested and are
+now covered, one was defensive and unreachable, one was my sweep mis-attributing
+the global error handler. Events and timers: one emitter and one listener for
+the only custom event, and all three interval timers stopped on close and
+unref'd. **No defect in either.**
+
+That is the first round to find nothing, which is weak evidence rather than
+proof. The yield is falling — six classes, six findings, then two classes and
+none — but a class nobody has thought of yet cannot be counted.
 
 ---
 
@@ -355,7 +365,7 @@ supplies it.
 
 ```bash
 npm install
-npm test --workspaces                      # 264 tests, no network required
+npm test --workspaces                      # 270 tests, no network required
 npm run test:live -w @ogt/og               # 6 live checks; 4 more with a key
 cd packages/contracts && forge test        # 108 tests
 bash script/verify-fork.sh                 # deploy + exercise on forked Galileo
