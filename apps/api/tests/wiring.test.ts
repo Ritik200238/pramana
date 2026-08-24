@@ -144,25 +144,13 @@ test('the coach worker does not filter itself into an empty queue either', () =>
   assert.match(source, /ensureRecordKey\(/, 'it creates the key it needs')
 })
 
-test('export includes every table the product writes', () => {
-  // "Export everything, free, forever" becomes false the moment a new table is
-  // added and not listed here.
+test('the export promise is checked against the schema, not a list', () => {
+  // This used to enumerate eleven table names by hand, which only ever verified
+  // what somebody had remembered to add. By the time the export was compared
+  // against the schema there were nineteen tables and seven were missing. The
+  // real check now lives in export-coverage.test.ts, derived from the schema.
   const source = code(read('routes', 'export.ts'))
-  for (const table of [
-    'meals',
-    'mealItems',
-    'weightLogs',
-    'lifeFacts',
-    'chatMessages',
-    'userFoods',
-    'knownAttributes',
-    'snapshots',
-    'healthMarkers',
-    'labReports',
-    'streaks',
-  ]) {
-    assert.match(source, new RegExp(`\\b${table}\\b`), `export omits ${table}`)
-  }
+  assert.match(source, /inferenceUsage/, 'the attestation receipts belong to the user')
 })
 
 test('the export hands over the 0G root hashes', () => {
