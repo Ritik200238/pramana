@@ -11,7 +11,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { api, isBlocked, type ChatResponse } from '../lib/api.ts'
+import { ApiError, api, isBlocked, type ChatResponse } from '../lib/api.ts'
 import { Blocked } from '../components/Blocked.tsx'
 
 interface Turn {
@@ -98,12 +98,17 @@ export function Chat() {
           ...(response.notice ? { notice: response.notice } : {}),
         },
       ])
-    } catch {
+    } catch (error) {
       setTurns((current) => [
         ...current,
         {
           role: 'assistant',
-          content: "I couldn't reach the server just now. What you wrote is still here.",
+          // The server says something more useful than "could not reach" when
+          // it knows why — being rate limited, most often. Coach and the meal
+          // flow already prefer its wording; this was the last one guessing.
+          content:
+            (error instanceof ApiError && error.userMessage) ||
+            "I couldn't reach the server just now. What you wrote is still here.",
         },
       ])
     } finally {

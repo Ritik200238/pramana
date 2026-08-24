@@ -183,7 +183,16 @@ export function Onboarding({ onDone }: OnboardingProps) {
         />
       )}
 
-      {error && <p className="error">{error}</p>}
+      {/*
+        * Announced. SignIn and the correction sheet already do this; onboarding
+        * did not, which left the one failure in a person's first ninety seconds
+        * as the only silent one.
+        */}
+      {error && (
+        <p className="error" role="alert">
+          {error}
+        </p>
+      )}
     </div>
   )
 }

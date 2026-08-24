@@ -632,3 +632,65 @@ describe('the core loop announces itself and does not lose your photo', () => {
     expect(source).not.toMatch(/message: error instanceof Error \? error\.message/)
   })
 })
+
+describe('every screen that waits or fails says so', () => {
+  /*
+   * Written after finding the same gap twice.
+   *
+   * Live regions were added as a category — chat, then the coach panels — and
+   * the check was "do live regions exist" rather than "does each journey have
+   * one". The meal flow, the longest wait in the product, had none. Onboarding,
+   * the first ninety seconds of anybody's use, had a silent failure. Repeating
+   * a meal changed the day's totals without a word.
+   *
+   * A fix applied by category misses the path that matters most, so this asks
+   * about paths.
+   */
+  async function screen(name: string): Promise<string> {
+    const { readFileSync } = await import('node:fs')
+    return readFileSync(`src/screens/${name}.tsx`, 'utf8')
+  }
+
+  const ANNOUNCES = /role="(status|alert)"|aria-live/
+
+  test('a failure is announced on every screen that can fail', async () => {
+    for (const name of ['SignIn', 'Onboarding', 'MealFlow', 'Coach', 'Today']) {
+      const source = await screen(name)
+      // Each of these has a catch block that puts something on screen. A person
+      // who cannot see it needs to be told.
+      expect(source, `${name} shows failures silently`).toMatch(ANNOUNCES)
+    }
+  })
+
+  test('a wait that takes seconds is announced', async () => {
+    const mealFlow = await screen('MealFlow')
+    const reading = mealFlow.slice(mealFlow.indexOf("stage.name === 'reading'"))
+    expect(reading.slice(0, 260)).toMatch(ANNOUNCES)
+  })
+
+  test('an action that changes the day announces what changed', async () => {
+    const today = await screen('Today')
+
+    // One tap logs a whole meal. Hearing nothing afterwards leaves somebody
+    // with no way to know whether it worked.
+    expect(today).toMatch(ANNOUNCES)
+
+    /*
+     * Checked inside the handler, not merely somewhere in the file. The first
+     * version of this asserted that the word "announcement" appeared, which the
+     * unused state variable satisfied on its own — so deleting the line that
+     * actually announces anything left the test green.
+     */
+    const handler = today.slice(today.indexOf('api.repeatMeal'))
+    expect(handler.slice(0, 500)).toMatch(/setAnnouncement\(/)
+  })
+
+  test('screens prefer the server’s wording when it has some', async () => {
+    // Rate limiting is the common case, and "could not reach the server" is
+    // both wrong and unhelpful for it.
+    for (const name of ['Coach', 'Chat', 'MealFlow', 'SignIn']) {
+      const source = await screen(name)
+      expect(source, `${name} invents its own message`).toMatch(/userMessage|readableError/)
+    }
+  })
+})

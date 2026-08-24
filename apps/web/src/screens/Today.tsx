@@ -27,6 +27,8 @@ export function Today({ onCapture, onOpenChat }: TodayProps) {
   const [usuals, setUsuals] = useState<Usual[]>([])
   const [nudge, setNudge] = useState<ProactiveMessage | null>(null)
   const [repeating, setRepeating] = useState<string | null>(null)
+  /** What just happened, for anybody not watching the numbers change. */
+  const [announcement, setAnnouncement] = useState<string | null>(null)
   const [correcting, setCorrecting] = useState<{ mealId: string; item: DaySummary['meals'][number]['items'][number] } | null>(null)
   const [offline, setOffline] = useState(false)
 
@@ -59,11 +61,17 @@ export function Today({ onCapture, onOpenChat }: TodayProps) {
   const repeat = useCallback(
     async (usual: Usual) => {
       setRepeating(usual.sourceMealId)
+      setAnnouncement(null)
       try {
         await api.repeatMeal(usual.sourceMealId)
         await load()
+        // One tap logs a whole meal and the totals change on their own. Without
+        // this, somebody using a screen reader taps and hears nothing at all,
+        // and has no way to know whether it worked.
+        setAnnouncement(`${usual.label} logged.`)
       } catch {
         setOffline(true)
+        setAnnouncement('That did not save. It is still here to try again.')
       } finally {
         setRepeating(null)
       }
@@ -219,6 +227,10 @@ export function Today({ onCapture, onOpenChat }: TodayProps) {
           </button>
         </div>
       )}
+
+      <p className="sr-only" role="status" aria-live="polite">
+        {announcement ?? ''}
+      </p>
 
       {offline && (
         <p className="offline-note">Showing what I have — you look offline.</p>
