@@ -18,7 +18,7 @@ Last updated: 2026-08-24.
 | Suite | Count | Command |
 |---|---|---|
 | `@ogt/core` — targets, safety, questions | 45 | `npm test -w @ogt/core` |
-| `@ogt/og` — router, storage, payments, encryption | 45 | `npm test -w @ogt/og` |
+| `@ogt/og` — router, storage, encryption, speech | 53 | `npm test -w @ogt/og` |
 | `@ogt/api` — services, routes, wiring | 166 | `npm test -w @ogt/api` |
 | `@ogt/api` — end-to-end, idempotency, delivery | 30 | included above |
 | `@ogt/web` — client, offline queue, reachability | 21 | `npm test -w @ogt/web` |
@@ -254,6 +254,7 @@ piece did its own job properly. They are only visible from outside.
 | Route-pattern strings vs real routes | speech transcription with no cost ceiling |
 | Columns never read, config never used | `anchor_address`, and a false security comment |
 | Error paths no test exercises | two untested refusals; no defect |
+| Request shapes vs the official API docs | voice notes ran with no TEE verification |
 | Events and timers with no counterpart | nothing; all clean |
 
 Guards were left behind for five of the six, each verified by mutation rather
@@ -386,7 +387,7 @@ supplies it.
 
 ```bash
 npm install
-npm test --workspaces                      # 277 tests, no network required
+npm test --workspaces                      # 285 tests, no network required
 npm run test:live -w @ogt/og               # 6 live checks; 4 more with a key
 cd packages/contracts && forge test        # 108 tests
 bash script/verify-fork.sh                 # deploy + exercise on forked Galileo
