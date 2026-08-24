@@ -113,6 +113,9 @@ export interface DaySummary {
     source: string
     questionsAsked: number
     items: Array<{
+      /** Needed to correct it. Without this the write path is unreachable. */
+      id: string
+      units: number
       name: string
       portionLabel: string
       kcal: number

@@ -19,6 +19,17 @@ import type { Database } from '../db/index.ts'
 import { mealItems, meals, users, weightLogs } from '../db/schema.ts'
 
 export interface DayMealItem {
+  /**
+   * Required to correct this item.
+   *
+   * It was absent, and the correction endpoint takes an item id — so the write
+   * path was unreachable from the read path. No client could have called it,
+   * which is why the whole correction loop, and the moat that depends on it,
+   * had no user-facing entry point.
+   */
+  id: string
+  /** Carried so a correction can pre-fill what was assumed. */
+  units: number
   name: string
   portionLabel: string
   kcal: number
@@ -126,6 +137,8 @@ export async function getDaySummary(input: DaySummaryInput): Promise<DaySummary>
   for (const item of itemRows) {
     const list = itemsByMeal.get(item.mealId) ?? []
     list.push({
+      id: item.id,
+      units: item.units,
       name: item.name,
       portionLabel: item.portionLabel,
       kcal: item.kcal,
