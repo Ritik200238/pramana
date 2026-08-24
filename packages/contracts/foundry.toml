@@ -1,0 +1,32 @@
+[profile.default]
+src = "src"
+test = "test"
+out = "out"
+libs = ["lib"]
+solc = "0.8.28"
+
+# 0G Chain requires the cancun EVM version.
+evm_version = "cancun"
+
+optimizer = true
+optimizer_runs = 200
+
+# Treat warnings as failures. A contract holding ownership of health records
+# does not get to ship with known compiler complaints.
+deny = "warnings"
+
+remappings = [
+    "@openzeppelin/=lib/openzeppelin-contracts/",
+    "forge-std/=lib/forge-std/src/",
+]
+
+[fuzz]
+runs = 512
+
+[invariant]
+runs = 256
+depth = 32
+
+[rpc_endpoints]
+og_testnet = "https://evmrpc-testnet.0g.ai"
+og_mainnet = "https://evmrpc.0g.ai"
