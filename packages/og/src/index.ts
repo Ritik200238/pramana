@@ -43,6 +43,7 @@ export {
   estimateCostNeuron,
   estimateDaysRemaining,
   formatOg,
+  formatCharge,
   isInsufficientBalance,
   parseOg,
   readBalance,

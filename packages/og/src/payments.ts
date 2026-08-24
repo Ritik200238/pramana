@@ -155,3 +155,34 @@ export function estimateDaysRemaining(
   if (perDay === 0n) return null
   return Number(balanceNeuron / perDay)
 }
+
+/**
+ * A single charge, shown so that it is never mistaken for free.
+ *
+ * Deliberately not `formatOg`. That function rounds for display, which is right
+ * for a balance — one neuron of dust in a wallet is noise, and rendering it as
+ * "0" is honest.
+ *
+ * A charge is a different question. Individual requests here are genuinely tiny
+ * — a meal photo runs around 0.0000000019 0G — so the same rounding turns every
+ * one of them into "0" and tells somebody their usage cost nothing. On the
+ * screen where a person checks what they are spending, that is simply the wrong
+ * number.
+ *
+ * So this keeps extending precision until the first significant digit appears.
+ * Zero still shows as zero, because zero is true.
+ */
+export function formatCharge(neuron: bigint): string {
+  if (neuron === 0n) return '0'
+
+  const whole = neuron / NEURON_PER_OG
+  const remainder = neuron % NEURON_PER_OG
+  if (remainder === 0n) return whole.toString()
+
+  const full = remainder.toString().padStart(18, '0')
+  // At least six decimals, and more when six would hide the amount entirely.
+  const significant = Math.max(6, full.search(/[1-9]/) + 1)
+  const fraction = full.slice(0, significant).replace(/0+$/, '')
+
+  return fraction.length > 0 ? `${whole}.${fraction}` : whole.toString()
+}
