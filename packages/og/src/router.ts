@@ -28,11 +28,24 @@ export class OGRouterError extends Error {
   // we run TypeScript through Node's type-stripping, which does not support
   // parameter properties because they emit runtime code.
   readonly attempts: ReadonlyArray<{ model: string; error: string }>
+  /**
+   * Seconds the Router asked us to wait, on a rate limit.
+   *
+   * Null for every other failure. Carried so a caller can say "try again in a
+   * minute" instead of inventing a number, and so a retry loop can honour the
+   * interval rather than guessing at one.
+   */
+  readonly retryAfterSeconds: number | null
 
-  constructor(message: string, attempts: ReadonlyArray<{ model: string; error: string }>) {
+  constructor(
+    message: string,
+    attempts: ReadonlyArray<{ model: string; error: string }>,
+    options?: { retryAfterSeconds?: number | null },
+  ) {
     super(message)
     this.name = 'OGRouterError'
     this.attempts = attempts
+    this.retryAfterSeconds = options?.retryAfterSeconds ?? null
   }
 }
 
@@ -189,7 +202,19 @@ export async function complete(
         attestation,
       }
     } catch (error) {
-      if (isNonRetryable(error)) throw error
+      if (isNonRetryable(error)) {
+        const status = (error as { status?: number }).status
+        if (status === 429) {
+          // Named explicitly, because "rate limited" and "your key is wrong"
+          // need completely different things from whoever is handling it.
+          throw new OGRouterError(
+            'The 0G Router rate limited this account.',
+            [...attempts, { model: model.id, error: describe(error) }],
+            { retryAfterSeconds: retryAfterSeconds(error) },
+          )
+        }
+        throw error
+      }
       attempts.push({ model: model.id, error: describe(error) })
     }
   }
@@ -197,12 +222,52 @@ export async function complete(
   throw new OGRouterError(`All ${chain.length} models failed for task "${opts.task}".`, attempts)
 }
 
-/** 4xx other than 408 and 429 means the next model would reject it identically. */
+/**
+ * Whether trying the next model in the chain could possibly help.
+ *
+ * Read from the Router's documented error table rather than guessed at, because
+ * the two kinds of 4xx here behave in opposite ways:
+ *
+ *   401, 402, 403  the account. Every model fails identically, so walking the
+ *                  chain is three requests to learn one thing.
+ *   400, 404       the request or the model. Also fatal as we build requests —
+ *                  parameters are chosen from what each model advertises, so a
+ *                  400 means the body itself is wrong.
+ *   408            a timeout, which belongs to the provider that stalled. The
+ *                  next model is a fresh set of providers and may well answer.
+ *   429            rate limiting, and the important correction. The
+ *                  documentation says the limit is **per account**, so failing
+ *                  over does not route around it — it fires another request at
+ *                  the same throttled account and burns the rest of the chain
+ *                  making the throttling worse. The right response is to stop
+ *                  and back off for the interval the Router names.
+ *
+ * Source: 0G docs, Router → Errors, and Router → Rate Limits.
+ */
 function isNonRetryable(error: unknown): boolean {
   const status = (error as { status?: number }).status
   if (typeof status !== 'number') return false
-  if (status === 408 || status === 429) return false
+
+  // A stalled provider is worth escaping; a throttled account is not.
+  if (status === 408) return false
+
   return status >= 400 && status < 500
+}
+
+/**
+ * How long the Router asked us to wait, in seconds.
+ *
+ * Present on a 429. Surfaced so the caller can honour it rather than guess —
+ * the rate-limit documentation is explicit that `Retry-After` is the number to
+ * use.
+ */
+export function retryAfterSeconds(error: unknown): number | null {
+  const headers = (error as { headers?: Record<string, string> }).headers
+  const raw = headers?.['retry-after'] ?? headers?.['Retry-After']
+  if (typeof raw !== 'string') return null
+
+  const seconds = Number(raw)
+  return Number.isFinite(seconds) && seconds >= 0 ? seconds : null
 }
 
 function describe(error: unknown): string {

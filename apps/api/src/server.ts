@@ -15,6 +15,7 @@ import { z } from 'zod'
 import { sql } from 'drizzle-orm'
 import {
   AnchorClient,
+  OGRouterError,
   CoachClient,
   assertAllChainsAreTeeAttested,
   createClient,
@@ -193,6 +194,25 @@ export async function buildServer(overrides: ServerOverrides = {}) {
   await registerExportRoutes(app, { db })
 
   app.setErrorHandler((error, request, reply) => {
+    /*
+     * An upstream rate limit is not a server fault.
+     *
+     * Without this it fell through to the 500 branch, so a throttled account
+     * looked like a broken product: the client would retry a queued meal
+     * against a limit that was still in force, and the person would be told
+     * something went wrong on our side when nothing had.
+     *
+     * The Router names the interval to wait; it is passed straight through
+     * rather than replaced with a guess.
+     */
+    if (error instanceof OGRouterError && error.retryAfterSeconds !== null) {
+      reply.header('retry-after', String(error.retryAfterSeconds))
+      return reply.status(429).send({
+        error: 'rate_limited',
+        message: 'The coach is busy just now. Try again in a moment.',
+      })
+    }
+
     if (error instanceof z.ZodError) {
       return reply.status(400).send({
         error: 'invalid_request',
