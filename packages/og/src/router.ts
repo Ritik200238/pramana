@@ -19,7 +19,7 @@
 
 import OpenAI from 'openai'
 import { CHAINS, type ModelSpec, type TaskName } from './models.ts'
-import { readReceipt, type AttestationReceipt } from './attestation.ts'
+import { readTrace, readReceipt, type AttestationReceipt } from './attestation.ts'
 
 export const ROUTER_BASE_URL = 'https://router-api.0g.ai/v1'
 
@@ -65,8 +65,27 @@ export function createClient(config: RouterConfig): OpenAI {
 export interface Usage {
   promptTokens: number
   completionTokens: number
-  /** Cost in USD, computed from the Router's published per-token pricing. */
-  usd: number
+  /**
+   * What the Router actually charged, in neuron (1e18 = 1 0G).
+   *
+   * This is the authoritative number and it arrives with every response. The
+   * documentation is explicit: "you don't need to compute costs yourself — the
+   * Router tells you exactly what was charged."
+   *
+   * Null only when the Router returned no billing block, which should not
+   * happen and is recorded honestly rather than filled in with a guess.
+   */
+  costNeuron: bigint | null
+  /**
+   * A local estimate in USD, from the catalogue's published per-token pricing.
+   *
+   * Kept for budgeting before a call is made, and deliberately not used for
+   * accounting after one. These constants drift — three of six were wrong when
+   * last checked against the live catalogue, one of them by 135% on the
+   * highest-volume call in the product, and speech was recorded as free when it
+   * is billed. `costNeuron` is what actually happened.
+   */
+  usdEstimate: number
 }
 
 export interface CompleteOptions {
@@ -161,7 +180,8 @@ export async function complete(
         usage: {
           promptTokens,
           completionTokens,
-          usd:
+          costNeuron: readCostNeuron(response),
+          usdEstimate:
             promptTokens * model.usdPerPromptToken +
             completionTokens * model.usdPerCompletionToken,
         },
@@ -192,4 +212,23 @@ function describe(error: unknown): string {
 export function stripFences(text: string): string {
   const fenced = /```(?:json)?\s*([\s\S]*?)```/.exec(text)
   return (fenced?.[1] ?? text).trim()
+}
+
+/**
+ * The exact charge for a request, as reported by the Router.
+ *
+ * Returned in neuron as a decimal string. Parsed with BigInt rather than
+ * Number, because these values run to sixteen digits and would start losing
+ * precision as doubles well before anybody noticed a rounding error in a bill.
+ */
+export function readCostNeuron(response: unknown): bigint | null {
+  const trace = readTrace(response)
+  const total = trace?.billing?.total_cost
+  if (typeof total !== 'string' || !/^\d+$/.test(total)) return null
+
+  try {
+    return BigInt(total)
+  } catch {
+    return null
+  }
 }

@@ -99,6 +99,11 @@ export function readReceipt(response: unknown, model: string): AttestationReceip
   }
 }
 
+/** The Router's metadata block, present on every response. */
+export function readTrace(response: unknown): Trace | null {
+  return extractTrace(response)
+}
+
 function extractTrace(response: unknown): Trace | null {
   if (typeof response !== 'object' || response === null) return null
   const raw = (response as Record<string, unknown>)['x_0g_trace']
