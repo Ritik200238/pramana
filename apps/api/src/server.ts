@@ -137,9 +137,33 @@ export async function buildServer() {
       })
     }
 
+    /*
+     * A client error keeps its own status.
+     *
+     * Collapsing everything into 500 was wrong in a way that is invisible
+     * until you look at the wire: a rate-limited caller, a photo over the size
+     * limit and a malformed request all reported a server fault. That tells
+     * the client to retry something that will never succeed, tells the person
+     * we broke when they did, and buries every genuine 500 in a graph of
+     * things that were nobody's fault but the caller's.
+     *
+     * These are safe to name because of where they come from — Fastify's own
+     * validation, the rate limiter, or an AuthError — none of which carry
+     * internal detail in their message.
+     */
+    const status = (error as { statusCode?: number }).statusCode ?? 500
+
+    if (status >= 400 && status < 500) {
+      request.log.info({ err: error, status }, 'client error')
+      return reply.status(status).send({
+        error: (error as { code?: string }).code ?? 'bad_request',
+        message: (error as { message?: string }).message ?? 'Bad request',
+      })
+    }
+
     request.log.error({ err: error }, 'unhandled error')
 
-    // Never leak an internal message to a client. It can contain a connection
+    // A server fault keeps nothing. The message can contain a connection
     // string, a key fragment, or a fragment of someone else's data.
     return reply.status(500).send({ error: 'internal_error' })
   })
