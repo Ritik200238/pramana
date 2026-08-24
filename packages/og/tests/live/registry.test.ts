@@ -29,6 +29,9 @@ const CATALOGUE = 'https://router-api.0g.ai/v1/models'
 interface LiveModel {
   id: string
   pricing_usd?: { prompt?: string; completion?: string }
+  supported_parameters?: string[]
+  max_completion_tokens?: number
+  provider_count?: number
   tee_attested?: boolean | null
   tee_type?: string | null
   architecture?: { input_modalities?: string[] }
@@ -169,4 +172,92 @@ test('our published prices still match the live catalogue', async () => {
   }
 
   assert.deepEqual(drifted, [], 'update packages/og/src/models.ts to the live figures')
+})
+
+test('we only send parameters the model advertises', async () => {
+  const live = await catalogue()
+
+  /*
+   * The Router does not silently drop a parameter a model does not support —
+   * the documentation says it answers 400, using `tools` as the example.
+   *
+   * `temperature` was being sent to every model unconditionally, and kimi-k3
+   * does not advertise it. kimi-k3 is the last entry in two chains, so that
+   * request would have failed at exactly the moment the earlier models were
+   * already failing and the fallback was all that remained — and the failover
+   * treats a client error as non-retryable, so the whole chain would end there.
+   */
+  const wrong: string[] = []
+
+  for (const model of Object.values(MODELS)) {
+    const entry = live.get(model.id)
+    const advertised = entry?.supported_parameters
+    if (!advertised) continue
+
+    const declared = {
+      temperature: model.supports.temperature,
+      response_format: model.supports.responseFormat,
+    }
+
+    for (const [name, weSaySupported] of Object.entries(declared)) {
+      const theySaySupported = advertised.includes(name)
+      if (weSaySupported !== theySaySupported) {
+        wrong.push(`${model.id} ${name}: we say ${weSaySupported}, catalogue says ${theySaySupported}`)
+      }
+    }
+  }
+
+  assert.deepEqual(wrong, [], 'update the supports block in packages/og/src/models.ts')
+})
+
+test('every chained model accepts the parameters we always send', async () => {
+  const live = await catalogue()
+
+  // max_tokens goes on every chat request with no condition on it, so a model
+  // that did not accept it could never serve a single call.
+  const unusable: string[] = []
+  for (const [task, chain] of Object.entries(CHAINS)) {
+    if (task === 'speech') continue
+    for (const model of chain) {
+      const advertised = live.get(model.id)?.supported_parameters
+      if (advertised && !advertised.includes('max_tokens')) {
+        unusable.push(`${model.id} in "${task}" does not accept max_tokens`)
+      }
+    }
+  }
+
+  assert.deepEqual(unusable, [], 'these models cannot serve a request as we build it')
+})
+
+test('our default output length fits inside every model’s ceiling', async () => {
+  const live = await catalogue()
+
+  // The router asks for 800 tokens by default. A model whose ceiling is lower
+  // would reject or truncate, and truncation is the worse of the two because a
+  // half-written JSON answer fails to parse for reasons that look unrelated.
+  const tooSmall: string[] = []
+  for (const model of Object.values(MODELS)) {
+    const ceiling = live.get(model.id)?.max_completion_tokens
+    if (typeof ceiling === 'number' && ceiling < 800 && model.id !== MODELS.whisper.id) {
+      tooSmall.push(`${model.id} caps at ${ceiling}`)
+    }
+  }
+
+  assert.deepEqual(tooSmall, [], 'the default max_tokens exceeds what these models allow')
+})
+
+test('no chain rests entirely on single-provider models', async () => {
+  const live = await catalogue()
+
+  // The Router fails over within a model's own provider set, so a chain made
+  // only of single-provider models has no redundancy anywhere in it.
+  for (const [task, chain] of Object.entries(CHAINS)) {
+    if (task === 'speech') continue // whisper is the only speech model; noted in models.ts
+
+    const redundant = chain.filter((model) => (live.get(model.id)?.provider_count ?? 0) > 1)
+    assert.ok(
+      redundant.length > 0,
+      `every model in "${task}" is served by a single provider`,
+    )
+  }
 })

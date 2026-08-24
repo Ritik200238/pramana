@@ -139,7 +139,8 @@ export async function complete(
           model: model.id,
           messages: opts.messages,
           max_tokens: opts.maxTokens ?? 800,
-          temperature: opts.temperature ?? 0.2,
+          // Only when the model advertises it. See ModelSpec.supports.
+          ...(model.supports.temperature ? { temperature: opts.temperature ?? 0.2 } : {}),
           ...(opts.jsonSchema
             ? {
                 response_format: {

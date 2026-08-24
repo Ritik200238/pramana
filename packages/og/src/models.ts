@@ -36,6 +36,23 @@ export interface ModelSpec {
    */
   readonly usdPerPromptToken: number
   readonly usdPerCompletionToken: number
+  /**
+   * Optional parameters this model advertises, from the catalogue's
+   * `supported_parameters`.
+   *
+   * Only the ones we actually send are tracked. The Router does not silently
+   * drop a parameter a model does not support — the documentation says it
+   * answers 400 instead, using `tools` as the example — so sending one that is
+   * not advertised is a risk with no upside.
+   *
+   * It mattered here: `temperature` was sent to every model unconditionally,
+   * and kimi-k3 does not list it. kimi-k3 is the last entry in two chains, so
+   * the failure would have arrived precisely when the earlier models were
+   * already failing and the fallback was the only thing left.
+   *
+   * `npm run test:live` compares these against the catalogue.
+   */
+  readonly supports: { readonly temperature: boolean; readonly responseFormat: boolean }
 }
 
 export const MODELS = {
@@ -45,6 +62,7 @@ export const MODELS = {
     vision: true,
     usdPerPromptToken: 0.0000000359,
     usdPerCompletionToken: 0.0000003587,
+    supports: { temperature: true, responseFormat: true },
   },
   ogm35b: {
     id: '0gm-1.0-35b-a3b',
@@ -52,6 +70,7 @@ export const MODELS = {
     vision: true,
     usdPerPromptToken: 0.00000008,
     usdPerCompletionToken: 0.00000048,
+    supports: { temperature: true, responseFormat: true },
   },
   qwen37plus: {
     id: 'qwen3.7-plus',
@@ -59,6 +78,7 @@ export const MODELS = {
     vision: true,
     usdPerPromptToken: 0.00000052,
     usdPerCompletionToken: 0.00000208,
+    supports: { temperature: true, responseFormat: true },
   },
   qwen38max: {
     id: 'qwen3.8-max',
@@ -66,6 +86,7 @@ export const MODELS = {
     vision: true,
     usdPerPromptToken: 0.00000165,
     usdPerCompletionToken: 0.000004951,
+    supports: { temperature: true, responseFormat: true },
   },
   kimik3: {
     id: 'kimi-k3',
@@ -73,6 +94,7 @@ export const MODELS = {
     vision: true,
     usdPerPromptToken: 0.000003,
     usdPerCompletionToken: 0.000015,
+    supports: { temperature: false, responseFormat: true },
   },
   whisper: {
     id: 'whisper-large-v3',
@@ -80,6 +102,7 @@ export const MODELS = {
     vision: false,
     usdPerPromptToken: 0.00013,
     usdPerCompletionToken: 0,
+    supports: { temperature: false, responseFormat: true },
   },
 } as const satisfies Record<string, ModelSpec>
 
