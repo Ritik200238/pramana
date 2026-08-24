@@ -24,6 +24,7 @@ import {
   writeWeekReview,
 } from '../services/review.ts'
 import { deriveFlag, readLabReport } from '../pipeline/lab-report.ts'
+import { ImageDataUrl } from '../services/image-input.ts'
 import { blockedResponse, guard } from '../services/safety-gate.ts'
 
 const OffsetQuery = z.object({
@@ -189,7 +190,8 @@ export async function registerCoachRoutes(
   /** Feature 16 — read a lab report. Explains what markers measure; never diagnoses. */
   app.post('/users/me/reports', async (request, reply) => {
     const userId = currentUserId(request)
-    const body = z.object({ imageUrl: z.string().min(1) }).parse(request.body)
+    // Inline only, for the same reason as the meal photo route.
+    const body = z.object({ imageUrl: ImageDataUrl }).parse(request.body)
 
     const [report] = await deps.db
       .insert(labReports)

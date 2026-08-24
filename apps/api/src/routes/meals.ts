@@ -26,10 +26,17 @@ import {
 } from '../services/meal-log.ts'
 import { blockedResponse, guard } from '../services/safety-gate.ts'
 import { inferenceUsage } from '../db/schema.ts'
+import { ImageDataUrl } from '../services/image-input.ts'
 
 const DraftBody = z.object({
-  /** data: URI or https URL. */
-  imageUrl: z.string().min(1),
+  /**
+   * The photo itself, inline.
+   *
+   * Not a link. A remote URL would be fetched by the provider on our account,
+   * which turns any signed-in person into a way to issue requests from our
+   * infrastructure to wherever they choose. See services/image-input.ts.
+   */
+  imageUrl: ImageDataUrl,
   note: z.string().max(500).optional(),
 })
 
