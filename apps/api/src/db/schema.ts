@@ -233,6 +233,15 @@ export const users = pgTable(
     blockedReason: text('blocked_reason'),
 
     proactiveOptOut: boolean('proactive_opt_out').notNull().default(false),
+    /**
+     * The coach they own, once minted. Null means not yet on chain.
+     *
+     * Stored here rather than derived, because reading it back from the chain
+     * on every request would put an RPC call in the middle of a page load.
+     */
+    coachTokenId: integer('coach_token_id'),
+    /** What the chain last recorded the coach knowing. Drives when to evolve. */
+    coachLearnedCount: integer('coach_learned_count').notNull().default(0),
     lastProactiveAt: timestamp('last_proactive_at', { withTimezone: true }),
 
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

@@ -13,7 +13,14 @@ import cors from '@fastify/cors'
 import multipart from '@fastify/multipart'
 import { z } from 'zod'
 import { sql } from 'drizzle-orm'
-import { AnchorClient, assertAllChainsAreTeeAttested, createClient, NETWORKS, OGStorage } from '@ogt/og'
+import {
+  AnchorClient,
+  CoachClient,
+  assertAllChainsAreTeeAttested,
+  createClient,
+  NETWORKS,
+  OGStorage,
+} from '@ogt/og'
 import type OpenAI from 'openai'
 import { loadConfig } from './config.ts'
 import { createDb, type Database } from './db/index.ts'
@@ -25,6 +32,7 @@ import { registerDayRoutes } from './routes/day.ts'
 import { registerCoachRoutes } from './routes/coach.ts'
 import { startScheduler } from './jobs/scheduler.ts'
 import { startAnchorWorker } from './jobs/anchor.ts'
+import { startCoachWorker } from './jobs/coach-brain.ts'
 import { authPlugin } from './plugins/auth.ts'
 import { idempotencyPlugin } from './plugins/idempotency.ts'
 import { ipLimitsPlugin, userLimitsPlugin } from './plugins/limits.ts'
@@ -256,6 +264,31 @@ export async function buildServer(overrides: ServerOverrides = {}) {
       : null
 
   if (overrides.backgroundJobs === false) anchorWorker?.stop()
+
+  /*
+   * The coach as an owned asset.
+   *
+   * Without this the CoachAgent contract has no call sites at all, and the
+   * ownership half of the 0G binding does no work: the coach would be a row in
+   * our database that we describe as theirs.
+   */
+  const coachWorker =
+    config.OG_COACH_ADDRESS && config.OG_ANCHOR_MASTER_SEED
+      ? startCoachWorker({
+          db,
+          storage,
+          client: new CoachClient({
+            rpcUrl: config.OG_RPC_URL_OVERRIDE ?? NETWORKS[config.OG_NETWORK].rpcUrl,
+            contractAddress: config.OG_COACH_ADDRESS,
+            relayerPrivateKey: config.OG_STORAGE_PRIVATE_KEY,
+            chainId: NETWORKS[config.OG_NETWORK].chainId,
+          }),
+          masterSeed: config.OG_ANCHOR_MASTER_SEED,
+          logger: app.log,
+        })
+      : null
+
+  if (overrides.backgroundJobs === false) coachWorker?.stop()
   if (!anchorWorker) {
     app.log.warn(
       'On-chain anchoring is off: set OG_ANCHOR_ADDRESS and OG_ANCHOR_MASTER_SEED. ' +
@@ -266,6 +299,7 @@ export async function buildServer(overrides: ServerOverrides = {}) {
   app.addHook('onClose', async () => {
     scheduler.stop()
     anchorWorker?.stop()
+    coachWorker?.stop()
     await close()
   })
 
@@ -304,8 +338,11 @@ export async function buildServer(overrides: ServerOverrides = {}) {
       // Anchoring follows snapshotting, so a forced pass produces a complete
       // record rather than one waiting on the next timer to reach the chain.
       const anchorResult = (await anchorWorker?.runOnce()) ?? null
-      request.log.info({ snapshotResult, anchorResult }, 'manual snapshot pass')
-      return reply.status(200).send({ snapshots: snapshotResult, anchors: anchorResult })
+      const coachResult = (await coachWorker?.runOnce()) ?? null
+      request.log.info({ snapshotResult, anchorResult, coachResult }, 'manual snapshot pass')
+      return reply
+        .status(200)
+        .send({ snapshots: snapshotResult, anchors: anchorResult, coaches: coachResult })
     })
   }
 

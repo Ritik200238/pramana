@@ -47,6 +47,12 @@ const schema = z.object({
    */
   OG_ANCHOR_MASTER_SEED: z.string().min(32).optional(),
 
+  /** Deployed CoachAgent address. Absent means coaches are never minted. */
+  OG_COACH_ADDRESS: z
+    .string()
+    .regex(/^0x[0-9a-fA-F]{40}$/)
+    .optional(),
+
   /** Deployed HealthRecordAnchor address. Absent until the contract is deployed. */
   OG_ANCHOR_ADDRESS: z
     .string()

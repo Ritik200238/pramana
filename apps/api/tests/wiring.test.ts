@@ -203,3 +203,34 @@ test('the snapshot pointer is never anchored twice', () => {
   // receipt was lost cannot be anchored again — the contract rejects the reuse.
   assert.match(worker, /nonceUsed\s*\(/, 'a retry must check the chain before spending')
 })
+
+test('the coach worker is actually reachable from the server', () => {
+  // CoachAgent had zero call sites outside its own test file: a contract with
+  // full coverage that nothing could reach. Of the four bindings meant to make
+  // 0G impossible to remove, ownership was doing no work at all, and "you own
+  // your coach" described a row in our database.
+  const worker = code(read('jobs', 'coach-brain.ts'))
+  assert.match(worker, /client\.mint\(/, 'the worker must actually mint')
+  assert.match(worker, /client\.evolve\(/, 'and record what the coach learns')
+  assert.match(worker, /\.update\(users\)/, 'and write the token id back, or it mints forever')
+
+  const server = code(readFileSync(join(SRC, 'server.ts'), 'utf8'))
+  assert.match(server, /startCoachWorker\(/, 'the server must start it')
+  assert.match(server, /coachWorker\?\.stop\(\)/, 'and stop it on close')
+})
+
+test('a coach is minted once, not once per pass', () => {
+  const worker = code(read('jobs', 'coach-brain.ts'))
+  // The nonce is derived from the user id, so a retry after a lost receipt is
+  // rejected by the contract rather than producing a second coach.
+  assert.match(worker, /nonceUsed\(/, 'a retry must ask the chain first')
+  assert.match(worker, /coachTokenId === null/, 'and only mint when there is no coach yet')
+})
+
+test('the brain never carries the meal log', () => {
+  // The health record is anchored separately and is a different thing. Putting
+  // meals in the coach brain would double-store the most sensitive data and
+  // blur what the token actually represents.
+  const worker = code(read('jobs', 'coach-brain.ts'))
+  assert.doesNotMatch(worker, /meals/, 'the brain is what was learned, not what was eaten')
+})

@@ -257,6 +257,23 @@ async function main(): Promise<void> {
     return { state: 'ok', detail: `deployed at ${config.OG_ANCHOR_ADDRESS}, relayer funded` }
   })
 
+  await check('coach ownership', false, async () => {
+    if (!config.OG_COACH_ADDRESS || !config.OG_ANCHOR_MASTER_SEED) {
+      return {
+        state: 'warn',
+        detail: 'OG_COACH_ADDRESS unset — coaches are never minted, so nobody owns one',
+      }
+    }
+
+    const rpc = config.OG_RPC_URL_OVERRIDE ?? network.rpcUrl
+    const provider = new ethers.JsonRpcProvider(rpc)
+    const code = await provider.getCode(config.OG_COACH_ADDRESS)
+    if (code === '0x') {
+      return { state: 'fail', detail: `no contract at ${config.OG_COACH_ADDRESS} on this network` }
+    }
+    return { state: 'ok', detail: `CoachAgent deployed at ${config.OG_COACH_ADDRESS}` }
+  })
+
   await check('0G Storage indexer', true, async () => {
     const response = await fetch(network.indexerUrl, { signal: AbortSignal.timeout(20_000) })
     // Any answer proves reachability; the endpoint is not a health check.
