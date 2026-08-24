@@ -21,7 +21,7 @@ Last updated: 2026-08-24.
 | `@ogt/og` — router, storage, encryption, speech, claims, cost | 78 | `npm test -w @ogt/og` |
 | `@ogt/api` — services, routes, wiring | 194 | `npm test -w @ogt/api` |
 | `@ogt/api` — end-to-end, idempotency, delivery | 30 | included above |
-| `@ogt/web` — client, offline queue, reachability, caching | 32 | `npm test -w @ogt/web` |
+| `@ogt/web` — client, offline queue, reachability, caching | 34 | `npm test -w @ogt/web` |
 | `contracts` — Foundry | 108 | `forge test` in `packages/contracts` |
 
 Contract coverage is 100% of lines, statements, branches and functions on both
@@ -321,6 +321,7 @@ piece did its own job properly. They are only visible from outside.
 | Unbounded inputs reaching a model or a provider | image routes accepted any URL, fetched on our account |
 | What the service worker caches, on a shared device | a day of health records survived sign-out |
 | What else survives sign-out on a shared device | queued meals flushed into the next person's account |
+| State captured once that should be read each time | the timezone offset, stale after travel |
 | Events and timers with no counterpart | nothing; all clean |
 
 Guards were left behind for five of the six, each verified by mutation rather
@@ -488,7 +489,7 @@ supplies it.
 
 ```bash
 npm install
-npm test --workspaces                      # 349 tests, no network required
+npm test --workspaces                      # 351 tests, no network required
 npm run test:live -w @ogt/og               # 6 live checks; 4 more with a key
 cd packages/contracts && forge test        # 108 tests
 bash script/verify-fork.sh                 # deploy + exercise on forked Galileo
