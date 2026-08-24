@@ -38,6 +38,8 @@ As of the last run, against 29 live models:
 - Every model in our chains exists on the Router.
 - Every model in every chain reports `tee_attested: true`.
 - Our published per-token prices match the catalogue exactly.
+- We send no parameter a model does not advertise, our default output length
+  fits every model's ceiling, and no chain is entirely single-provider.
 - Our recorded attestation flags match what the Router reports.
 - Every model we send photographs to accepts image input.
 - `claude-*` and `gpt-*` still report no attestation, and remain absent from
@@ -270,6 +272,7 @@ piece did its own job properly. They are only visible from outside.
 | Product claims vs what the docs support | the privacy sentence overstated its evidence |
 | Published prices vs the live catalogue | three drifted; vision undercounted by 46% |
 | Reported values we receive and discard | the exact per-request charge was thrown away |
+| Request parameters vs model capabilities | temperature sent to a model that rejects it |
 | Events and timers with no counterpart | nothing; all clean |
 
 Guards were left behind for five of the six, each verified by mutation rather
