@@ -18,7 +18,7 @@ Last updated: 2026-08-24.
 | Suite | Count | Command |
 |---|---|---|
 | `@ogt/core` — targets, safety, questions | 45 | `npm test -w @ogt/core` |
-| `@ogt/og` — router, storage, encryption, speech, claims, cost | 66 | `npm test -w @ogt/og` |
+| `@ogt/og` — router, storage, encryption, speech, claims, cost | 72 | `npm test -w @ogt/og` |
 | `@ogt/api` — services, routes, wiring | 166 | `npm test -w @ogt/api` |
 | `@ogt/api` — end-to-end, idempotency, delivery | 30 | included above |
 | `@ogt/web` — client, offline queue, reachability | 21 | `npm test -w @ogt/web` |
@@ -198,6 +198,11 @@ trip is proved with real cryptography in `packages/og/tests/encryption.test.ts`:
 - every encryption uses a fresh ephemeral key
 - a fragmented payload decrypts correctly from a non-zero offset
 
+Reads now also request Merkle proof verification. That is not belt-and-braces:
+the cipher is malleable and carries no authentication tag, so altered ciphertext
+decrypts to altered plaintext rather than failing. The proof is the only check
+in that path.
+
 This does not prove a live indexer returns the bytes unchanged. It proves that
 when they come back, they decrypt.
 
@@ -273,6 +278,7 @@ piece did its own job properly. They are only visible from outside.
 | Published prices vs the live catalogue | three drifted; vision undercounted by 46% |
 | Reported values we receive and discard | the exact per-request charge was thrown away |
 | Request parameters vs model capabilities | temperature sent to a model that rejects it |
+| SDK options vs the storage docs | records read back without proof verification |
 | Events and timers with no counterpart | nothing; all clean |
 
 Guards were left behind for five of the six, each verified by mutation rather
@@ -405,7 +411,7 @@ supplies it.
 
 ```bash
 npm install
-npm test --workspaces                      # 298 tests, no network required
+npm test --workspaces                      # 304 tests, no network required
 npm run test:live -w @ogt/og               # 6 live checks; 4 more with a key
 cd packages/contracts && forge test        # 108 tests
 bash script/verify-fork.sh                 # deploy + exercise on forked Galileo
