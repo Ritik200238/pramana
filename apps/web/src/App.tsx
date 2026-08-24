@@ -16,7 +16,14 @@ import { MealFlow } from './screens/MealFlow.tsx'
 import { Chat } from './screens/Chat.tsx'
 import { Coach } from './screens/Coach.tsx'
 import { You } from './screens/You.tsx'
-import { api, clearToken, flushQueue, queueLength, SESSION_EXPIRED } from './lib/api.ts'
+import {
+  api,
+  clearToken,
+  flushQueue,
+  queueLength,
+  storeUserId,
+  SESSION_EXPIRED,
+} from './lib/api.ts'
 import './app.css'
 
 type Tab = 'today' | 'coach' | 'chat' | 'you'
@@ -38,6 +45,10 @@ export function App() {
   const resolveSession = useCallback(async () => {
     try {
       const me = await api.me()
+      // Recorded before anything can be queued, so a meal logged offline is
+      // attributable to the person who logged it rather than to whoever is
+      // holding the phone when it finally sends.
+      storeUserId(me.user.id)
       setAuth({ state: me.onboarded ? 'ready' : 'onboarding' })
     } catch {
       setAuth({ state: 'signed-out' })

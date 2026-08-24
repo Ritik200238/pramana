@@ -291,9 +291,32 @@ export async function clearCachedReads(): Promise<void> {
   }
 }
 
+const USER_KEY = 'ogt.user'
+
+/** Remember who is signed in, so queued work can be attributed to them. */
+export function storeUserId(userId: string): void {
+  try {
+    localStorage.setItem(USER_KEY, userId)
+  } catch {
+    // Without this, queued meals cannot be attributed and will not be sent.
+    // Losing them is the correct failure: sending them to whoever is next is not.
+  }
+}
+
+export function readUserId(): string | null {
+  try {
+    return localStorage.getItem(USER_KEY)
+  } catch {
+    return null
+  }
+}
+
 export function clearToken(): void {
   try {
     localStorage.removeItem(TOKEN_KEY)
+    // The queue is deliberately left alone: those meals still belong to the
+    // person who logged them, and they send when that person signs back in.
+    localStorage.removeItem(USER_KEY)
   } catch {
     // Nothing useful to do here.
   }
@@ -585,6 +608,13 @@ interface QueuedRequest {
   path: string
   body: string
   queuedAt: number
+  /**
+   * Who logged this meal.
+   *
+   * Absent in queues written before this existed, and those cannot be sent to
+   * anybody: the whole point is that we no longer know whose they are.
+   */
+  userId?: string
 }
 
 function readQueue(): QueuedRequest[] {
@@ -612,12 +642,17 @@ export function enqueue(path: string, body: unknown): void {
     path,
     body: JSON.stringify(body),
     queuedAt: Date.now(),
+    // Stamped at the moment it is queued, because by the time it is sent the
+    // person at the phone may not be the person who ate the meal.
+    ...(readUserId() ? { userId: readUserId()! } : {}),
   })
   writeQueue(queue)
 }
 
+/** How many of *this* person's meals are still waiting. */
 export function queueLength(): number {
-  return readQueue().length
+  const owner = readUserId()
+  return readQueue().filter((entry) => entry.userId !== undefined && entry.userId === owner).length
 }
 
 /**
@@ -628,7 +663,30 @@ export function queueLength(): number {
  * than skipping ahead.
  */
 export async function flushQueue(): Promise<{ sent: number; remaining: number }> {
-  let queue = readQueue()
+  const owner = readUserId()
+
+  /*
+   * Only this person's meals.
+   *
+   * The queue lives in local storage and used to survive a sign-out untouched,
+   * so on a shared phone the next person to sign in flushed the previous
+   * person's meals into their own account. They lost the record and somebody
+   * else gained a day of food they never ate.
+   *
+   * Entries belonging to somebody else are left exactly where they are, so
+   * they still send when that person signs back in. Entries with no owner at
+   * all predate this and cannot be attributed to anyone, so they are dropped
+   * rather than guessed at.
+   */
+  const all = readQueue()
+  const mine = all.filter((entry) => entry.userId !== undefined && entry.userId === owner)
+  const theirs = all.filter((entry) => entry.userId !== undefined && entry.userId !== owner)
+
+  if (mine.length + theirs.length !== all.length) {
+    writeQueue([...mine, ...theirs])
+  }
+
+  let queue = mine
   let sent = 0
 
   while (queue.length > 0) {
@@ -643,7 +701,7 @@ export async function flushQueue(): Promise<{ sent: number; remaining: number }>
         headers: { 'Idempotency-Key': next.id },
       })
       queue = queue.slice(1)
-      writeQueue(queue)
+      writeQueue([...queue, ...theirs])
       sent += 1
     } catch (error) {
       // A rejected write will never succeed on retry, so drop it rather than
@@ -660,7 +718,7 @@ export async function flushQueue(): Promise<{ sent: number; remaining: number }>
         error.status !== 409
       if (rejected) {
         queue = queue.slice(1)
-        writeQueue(queue)
+        writeQueue([...queue, ...theirs])
         continue
       }
       break

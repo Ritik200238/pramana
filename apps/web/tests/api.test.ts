@@ -66,6 +66,10 @@ beforeEach(() => {
   vi.unstubAllGlobals()
   vi.stubGlobal('localStorage', storage)
   vi.stubGlobal('window', listeners)
+  // Somebody is signed in before they can log a meal, and queued work is
+  // attributed to them. Without this every entry is unattributable and is
+  // deliberately never sent.
+  api.storeUserId('user-a')
 })
 
 // ---------------------------------------------------------------- the queue
@@ -453,5 +457,86 @@ describe('a device that changes hands', () => {
     // Private mode, an old browser, a locked-down profile. None of them may
     // stop somebody signing out.
     await expect(api.api.signOut()).resolves.toBeUndefined()
+  })
+})
+
+describe('the queue on a shared phone', () => {
+  /*
+   * The queue lives in local storage and used to survive a sign-out untouched.
+   * So on a shared phone the next person to sign in flushed the previous
+   * person's meals into their own account: one lost a day of food they had
+   * been told was saved, the other gained a day they never ate.
+   */
+  test('a meal is only ever sent to the person who logged it', async () => {
+    api.enqueue('/meals/commit', { meal: 'alice dinner' })
+
+    // Alice signs out, Bob signs in on the same phone.
+    api.clearToken()
+    api.storeUserId('user-b')
+
+    const calls = scriptFetch([200])
+    const result = await api.flushQueue()
+
+    expect(calls).toHaveLength(0)
+    expect(result).toEqual({ sent: 0, remaining: 0 })
+  })
+
+  test('and it is still there when they sign back in', async () => {
+    api.enqueue('/meals/commit', { meal: 'alice dinner' })
+
+    api.clearToken()
+    api.storeUserId('user-b')
+    await api.flushQueue()
+
+    // Alice returns. Her meal was told to her as saved, so it must still send.
+    api.storeUserId('user-a')
+    const calls = scriptFetch([200])
+    const result = await api.flushQueue()
+
+    expect(result).toEqual({ sent: 1, remaining: 0 })
+    expect(JSON.parse(calls[0]!.body as string).meal).toBe('alice dinner')
+  })
+
+  test('the count shown is the count of your own meals', async () => {
+    api.enqueue('/meals/commit', { meal: 'alice dinner' })
+    expect(api.queueLength()).toBe(1)
+
+    api.storeUserId('user-b')
+    // Bob has logged nothing. Telling him one meal is waiting to sync would be
+    // both wrong and alarming.
+    expect(api.queueLength()).toBe(0)
+  })
+
+  test('an unattributable meal is dropped rather than given to somebody', async () => {
+    // A queue written before entries carried an owner. There is no safe person
+    // to send it to.
+    storage.setItem(
+      'ogt.queue.v1',
+      JSON.stringify([{ id: 'old', path: '/meals/commit', body: '{}', queuedAt: 1 }]),
+    )
+
+    const calls = scriptFetch([200])
+    const result = await api.flushQueue()
+
+    expect(calls).toHaveLength(0)
+    expect(result).toEqual({ sent: 0, remaining: 0 })
+    expect(api.queueLength()).toBe(0)
+  })
+
+  test('one person flushing does not discard another person’s meals', async () => {
+    api.enqueue('/meals/commit', { meal: 'alice dinner' })
+
+    api.storeUserId('user-b')
+    api.enqueue('/meals/commit', { meal: 'bob lunch' })
+
+    const calls = scriptFetch([200])
+    await api.flushQueue()
+
+    // Bob's sent, Alice's untouched.
+    expect(calls).toHaveLength(1)
+    expect(JSON.parse(calls[0]!.body as string).meal).toBe('bob lunch')
+
+    api.storeUserId('user-a')
+    expect(api.queueLength()).toBe(1)
   })
 })
