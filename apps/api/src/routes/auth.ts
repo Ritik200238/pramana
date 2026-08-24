@@ -21,11 +21,12 @@ import { sessions, users } from '../db/schema.ts'
 import {
   AuthError,
   requestCode,
+  resolveSession,
   revokeAllSessions,
   revokeSession,
   verifyCode,
 } from '../services/auth.ts'
-import { currentUserId } from '../plugins/auth.ts'
+import { currentUserId, extractToken } from '../plugins/auth.ts'
 
 export interface AuthRouteDeps {
   db: Database
@@ -138,8 +139,21 @@ export async function registerAuthRoutes(
   })
 
   app.post('/auth/signout', async (request, reply) => {
-    if (request.user) await revokeSession(deps.db, request.user.sessionId)
+    // This route is exempt from the session hook, so that signing out with a
+    // token that has already expired still clears the cookie rather than
+    // erroring. That exemption also means `request.user` is never populated
+    // here — reading it left the server-side session alive while telling the
+    // client it was gone, which is exactly backwards for the situation this
+    // endpoint exists to handle: a phone that is no longer in your hands.
+    const token = extractToken(request)
+    if (token) {
+      const session = await resolveSession(deps.db, token)
+      if (session) await revokeSession(deps.db, session.sessionId)
+    }
+
     reply.header('Set-Cookie', 'ogt_session=; Path=/; HttpOnly; Max-Age=0')
+    // Always 200. Whether the token was live is not a fact worth reporting to
+    // whoever is holding it.
     return reply.status(200).send({ signedOut: true })
   })
 

@@ -34,7 +34,13 @@ export interface AuthPluginOptions {
 }
 
 /** Bearer token, or the session cookie if the client prefers that. */
-function extractToken(request: FastifyRequest): string | null {
+/**
+ * The bearer token or session cookie on this request.
+ *
+ * Exported because a route that is exempt from the session hook still may need
+ * to act on the token — signing out being the obvious one.
+ */
+export function extractToken(request: FastifyRequest): string | null {
   const header = request.headers.authorization
   if (header?.startsWith('Bearer ')) return header.slice(7).trim()
 
