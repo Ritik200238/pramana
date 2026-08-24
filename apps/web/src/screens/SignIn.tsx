@@ -64,10 +64,11 @@ export function SignIn({ onSignedIn }: SignInProps) {
         })
         setCode('')
       } catch (caught) {
+        // The server distinguishes "too many codes" from "we could not send
+        // it", and those need different things from the person reading them.
         setError(
-          caught instanceof ApiError && caught.status === 429
-            ? 'Too many codes requested. Try again in an hour.'
-            : 'That number does not look right.',
+          (caught instanceof ApiError && caught.userMessage) ||
+            'That number does not look right.',
         )
       } finally {
         setBusy(false)

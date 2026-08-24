@@ -39,7 +39,7 @@ vi.stubGlobal('localStorage', storage)
 vi.stubGlobal('window', listeners)
 
 /** A fetch that answers from a queue of scripted statuses, recording calls. */
-function scriptFetch(statuses: number[]) {
+function scriptFetch(statuses: number[], bodies?: string[]) {
   const calls: Array<{ path: string; body: unknown; init: RequestInit }> = []
   let index = 0
 
@@ -51,7 +51,7 @@ function scriptFetch(statuses: number[]) {
       status,
       statusText: `status ${status}`,
       json: async () => ({ ok: true }),
-      text: async () => '',
+      text: async () => bodies?.shift() ?? '',
     } as unknown as Response
   })
 
@@ -245,6 +245,55 @@ describe('session handling', () => {
     expect(() => api.storeToken('x')).not.toThrow()
     expect(() => api.clearToken()).not.toThrow()
     expect(api.queueLength()).toBe(0)
+  })
+})
+
+describe('error reporting', () => {
+  test('a server message is parsed, not handed over as raw JSON', async () => {
+    scriptFetch(
+      [429],
+      ['{"error":"rate_limited","message":"A lot of questions in a short time."}'],
+    )
+
+    await expect(api.api.today()).rejects.toMatchObject({
+      status: 429,
+      code: 'rate_limited',
+    })
+  })
+
+  test('a client error offers its message to the UI', async () => {
+    scriptFetch([429], ['{"error":"rate_limited","message":"Give it a moment."}'])
+
+    try {
+      await api.api.today()
+      expect.unreachable()
+    } catch (error) {
+      expect((error as InstanceType<typeof api.ApiError>).userMessage).toBe('Give it a moment.')
+    }
+  })
+
+  test('a server fault offers nothing, because its message may carry internals', async () => {
+    scriptFetch([500], ['{"error":"internal_error"}'])
+
+    try {
+      await api.api.today()
+      expect.unreachable()
+    } catch (error) {
+      // The caller supplies its own wording rather than showing "internal_error".
+      expect((error as InstanceType<typeof api.ApiError>).userMessage).toBeNull()
+    }
+  })
+
+  test('a non-JSON body does not become the message', async () => {
+    scriptFetch([502], ['<html>Bad Gateway</html>'])
+
+    try {
+      await api.api.today()
+      expect.unreachable()
+    } catch (error) {
+      // A proxy error page is not something to show a person.
+      expect((error as InstanceType<typeof api.ApiError>).userMessage).toBeNull()
+    }
   })
 })
 

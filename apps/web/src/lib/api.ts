@@ -212,12 +212,30 @@ const OFFSET = -new Date().getTimezoneOffset()
 
 export class ApiError extends Error {
   readonly status: number
+  /** The server's machine-readable code, when it sent one. */
+  readonly code: string | null
 
-  constructor(message: string, status: number) {
+  constructor(message: string, status: number, code: string | null = null) {
     super(message)
     this.name = 'ApiError'
     this.status = status
+    this.code = code
   }
+
+  /**
+   * Something worth showing a person, or null.
+   *
+   * Only messages the server wrote for a human are returned. A 500 says
+   * nothing — deliberately, since its message can carry internals — and the
+   * caller supplies its own wording rather than showing "internal_error".
+   */
+  get userMessage(): string | null {
+    return this.status >= 400 && this.status < 500 && this.humanMessage
+      ? this.humanMessage
+      : null
+  }
+
+  humanMessage: string | null = null
 }
 
 /** Fired when the server says the session is gone, so the shell reacts once. */
@@ -271,8 +289,24 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   if (!response.ok) {
-    const detail = await response.text().catch(() => '')
-    throw new ApiError(detail || response.statusText, response.status)
+    // Parsed rather than kept as text. The body is JSON, and passing it through
+    // raw meant `error.message` was a JSON document — one careless render away
+    // from showing somebody `{"error":"rate_limited",...}` on screen.
+    const raw = await response.text().catch(() => '')
+    let code: string | null = null
+    let human: string | null = null
+
+    try {
+      const parsed = JSON.parse(raw) as { error?: string; message?: string }
+      code = parsed.error ?? null
+      human = parsed.message ?? null
+    } catch {
+      // Not JSON — a proxy error page, most likely. Nothing to show a person.
+    }
+
+    const error = new ApiError(human ?? code ?? response.statusText, response.status, code)
+    error.humanMessage = human
+    throw error
   }
 
   return (await response.json()) as T
