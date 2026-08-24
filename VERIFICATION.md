@@ -18,7 +18,7 @@ Last updated: 2026-08-24.
 | Suite | Count | Command |
 |---|---|---|
 | `@ogt/core` — targets, safety, questions | 45 | `npm test -w @ogt/core` |
-| `@ogt/og` — router, storage, encryption, speech | 53 | `npm test -w @ogt/og` |
+| `@ogt/og` — router, storage, encryption, speech, claims | 57 | `npm test -w @ogt/og` |
 | `@ogt/api` — services, routes, wiring | 166 | `npm test -w @ogt/api` |
 | `@ogt/api` — end-to-end, idempotency, delivery | 30 | included above |
 | `@ogt/web` — client, offline queue, reachability | 21 | `npm test -w @ogt/web` |
@@ -43,8 +43,19 @@ As of the last run, against 29 live models:
   every chain. They are proxied to their original providers — billing
   convenience, not confidential execution.
 
-This is the load-bearing check for the sentence the app shows on its sign-in
-screen. If it ever fails, that sentence has become false.
+This is the load-bearing check for the claim the app makes on its sign-in
+screen. If it ever fails, that claim has become false.
+
+**What `verified` means, precisely.** 0G's documentation is explicit: the Router
+fetches the provider's TEE signature, looks the signer up on chain, checks it,
+and returns one boolean. It does not return the signature. So `tee_verified:
+true` is the Router's word that it did the check — traceable to a named provider
+and request id, and still somebody else's assertion rather than a proof anybody
+can re-run. The app says exactly this, on the screen showing the receipts.
+
+The product previously claimed "Nobody — including us — could read them". That
+was false twice: the Router relays the plaintext, and records are encrypted to a
+key we hold. Four tests now fail if that sentence returns.
 
 ### The four 0G bindings, and whether each does work
 
@@ -255,6 +266,7 @@ piece did its own job properly. They are only visible from outside.
 | Columns never read, config never used | `anchor_address`, and a false security comment |
 | Error paths no test exercises | two untested refusals; no defect |
 | Request shapes vs the official API docs | voice notes ran with no TEE verification |
+| Product claims vs what the docs support | the privacy sentence overstated its evidence |
 | Events and timers with no counterpart | nothing; all clean |
 
 Guards were left behind for five of the six, each verified by mutation rather
@@ -387,7 +399,7 @@ supplies it.
 
 ```bash
 npm install
-npm test --workspaces                      # 285 tests, no network required
+npm test --workspaces                      # 289 tests, no network required
 npm run test:live -w @ogt/og               # 6 live checks; 4 more with a key
 cd packages/contracts && forge test        # 108 tests
 bash script/verify-fork.sh                 # deploy + exercise on forked Galileo
