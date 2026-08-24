@@ -4,10 +4,11 @@ pragma solidity 0.8.28;
 import {Script} from "forge-std/Script.sol";
 import {console} from "forge-std/console.sol";
 import {HealthRecordAnchor} from "../src/HealthRecordAnchor.sol";
+import {CoachAgent} from "../src/CoachAgent.sol";
 
 /**
  * @title Deploy
- * @notice Deploys HealthRecordAnchor to 0G Chain.
+ * @notice Deploys both contracts to 0G Chain.
  *
  * Usage:
  *   forge script script/Deploy.s.sol:Deploy --rpc-url og_testnet --broadcast
@@ -16,6 +17,11 @@ import {HealthRecordAnchor} from "../src/HealthRecordAnchor.sol";
  * Required environment:
  *   PRIVATE_KEY  deployer key
  *   ADMIN        address receiving DEFAULT_ADMIN_ROLE and PAUSER_ROLE
+ *
+ * Optional environment:
+ *   ORACLE       ERC-7857 transfer-proof verifier. Zero until one is deployed,
+ *                which disables sealed-key transfers rather than accepting
+ *                unverified ones.
  *
  * @dev ADMIN is required explicitly rather than defaulting to the deployer.
  *      Silently handing pause authority to whichever hot key happened to run
@@ -26,9 +32,10 @@ contract Deploy is Script {
     uint256 internal constant OG_TESTNET_CHAIN_ID = 16602;
     uint256 internal constant OG_MAINNET_CHAIN_ID = 16661;
 
-    function run() external returns (HealthRecordAnchor anchor) {
+    function run() external returns (HealthRecordAnchor anchor, CoachAgent coach) {
         uint256 deployerKey = vm.envUint("PRIVATE_KEY");
         address admin = vm.envAddress("ADMIN");
+        address oracle = vm.envOr("ORACLE", address(0));
 
         require(admin != address(0), "ADMIN must not be the zero address");
 
@@ -42,15 +49,32 @@ contract Deploy is Script {
         console.log("Chain id :", chainId);
         console.log("Deployer :", deployer);
         console.log("Admin    :", admin);
+        console.log("Oracle   :", oracle);
 
         vm.startBroadcast(deployerKey);
         anchor = new HealthRecordAnchor(admin);
+        coach = new CoachAgent(admin, oracle);
         vm.stopBroadcast();
 
         console.log("HealthRecordAnchor:", address(anchor));
+        console.log("CoachAgent        :", address(coach));
 
         // Fail the run rather than leave a misconfigured contract on chain.
-        require(anchor.hasRole(anchor.DEFAULT_ADMIN_ROLE(), admin), "admin role not set");
-        require(anchor.hasRole(anchor.PAUSER_ROLE(), admin), "pauser role not set");
+        // Every one of these is cheap here and unfixable later.
+        require(anchor.hasRole(anchor.DEFAULT_ADMIN_ROLE(), admin), "anchor: admin role not set");
+        require(anchor.hasRole(anchor.PAUSER_ROLE(), admin), "anchor: pauser role not set");
+        require(coach.hasRole(coach.DEFAULT_ADMIN_ROLE(), admin), "coach: admin role not set");
+        require(coach.hasRole(coach.PAUSER_ROLE(), admin), "coach: pauser role not set");
+
+        // The deployer must hold nothing. A hot key that keeps pause authority
+        // after the deployment is a standing risk for no benefit.
+        require(
+            deployer == admin || !anchor.hasRole(anchor.DEFAULT_ADMIN_ROLE(), deployer),
+            "anchor: deployer retained admin"
+        );
+        require(
+            deployer == admin || !coach.hasRole(coach.DEFAULT_ADMIN_ROLE(), deployer),
+            "coach: deployer retained admin"
+        );
     }
 }
