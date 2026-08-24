@@ -139,27 +139,3 @@ export async function readMealText(opts: ReadTextOptions): Promise<ReadTextResul
     attestation: result.attestation,
   }
 }
-
-/**
- * Speech to text via 0G Compute.
- *
- * `whisper-large-v3` is the only speech model the Router serves, so there is no
- * fallback chain to walk here — a failure is a failure, and the client falls
- * back to the keyboard rather than to a worse transcription.
- */
-export interface TranscribeOptions {
-  client: OpenAI
-  audio: File
-  /** ISO-639-1. Hindi transcribes noticeably better when the hint is given. */
-  language?: string
-}
-
-export async function transcribe(opts: TranscribeOptions): Promise<{ text: string }> {
-  const response = await opts.client.audio.transcriptions.create({
-    file: opts.audio,
-    model: 'whisper-large-v3',
-    ...(opts.language ? { language: opts.language } : {}),
-  })
-
-  return { text: typeof response === 'string' ? response : response.text }
-}

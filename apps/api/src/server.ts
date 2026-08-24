@@ -186,7 +186,7 @@ export async function buildServer(overrides: ServerOverrides = {}) {
     secureCookies: config.NODE_ENV === 'production',
   })
   await registerUserRoutes(app, { db })
-  await registerMealRoutes(app, { db, openai })
+  await registerMealRoutes(app, { db, openai, routerApiKey: config.OG_ROUTER_API_KEY })
   await registerChatRoutes(app, { db, openai })
   await registerDayRoutes(app, { db })
   await registerCoachRoutes(app, { db, openai })

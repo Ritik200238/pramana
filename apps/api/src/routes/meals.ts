@@ -13,7 +13,8 @@ import type OpenAI from 'openai'
 import type { Database } from '../db/index.ts'
 import { currentUserId } from '../plugins/auth.ts'
 import { readMeal } from '../pipeline/meal-vision.ts'
-import { readMealText, transcribe } from '../pipeline/meal-text.ts'
+import { readMealText } from '../pipeline/meal-text.ts'
+import { transcribeAudio } from '@ogt/og'
 import { VisionResultSchema } from '../pipeline/meal-vision.ts'
 import {
   applyAnswers,
@@ -59,6 +60,11 @@ const CommitBody = z.object({
 export interface MealRouteDeps {
   db: Database
   openai: OpenAI
+  /**
+   * Passed separately from the SDK client because the audio endpoint needs a
+   * query parameter the SDK cannot add.
+   */
+  routerApiKey: string
 }
 
 export async function registerMealRoutes(app: FastifyInstance, deps: MealRouteDeps): Promise<void> {
@@ -199,6 +205,7 @@ export async function registerMealRoutes(app: FastifyInstance, deps: MealRouteDe
    * visible and correctable rather than silently logged.
    */
   app.post('/meals/transcribe', async (request, reply) => {
+    const userId = currentUserId(request)
     const file = await request.file()
     if (!file) return reply.status(400).send({ error: 'no_audio' })
 
@@ -207,11 +214,32 @@ export async function registerMealRoutes(app: FastifyInstance, deps: MealRouteDe
     try {
       const buffer = await file.toBuffer()
       const audio = new File([buffer], file.filename, { type: file.mimetype })
-      const result = await transcribe({
-        client: deps.openai,
+
+      // Attested like every other model call. This endpoint sends `verify_tee`
+      // as a query parameter rather than a body field, because it is multipart
+      // — see packages/og/src/speech.ts.
+      const result = await transcribeAudio({
+        apiKey: deps.routerApiKey,
         audio,
         ...(language ? { language } : {}),
       })
+
+      // Recorded, so a voice note appears in the receipts the app shows a
+      // person. It was the one model call missing from that list, which made
+      // the proof screen quietly incomplete for anybody who spoke to the app.
+      await deps.db.insert(inferenceUsage).values({
+        userId,
+        task: 'speech',
+        model: result.model,
+        promptTokens: 0,
+        completionTokens: 0,
+        usd: '0',
+        failovers: 0,
+        attestation: result.attestation.status,
+        attestationProvider: result.attestation.provider,
+        attestationRequestId: result.attestation.requestId,
+      })
+
       return reply.status(200).send({ text: result.text })
     } catch (error) {
       request.log.error({ err: error }, 'transcription failed')
