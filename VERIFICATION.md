@@ -21,7 +21,7 @@ Last updated: 2026-08-24.
 | `@ogt/og` — router, storage, payments | 38 | `npm test -w @ogt/og` |
 | `@ogt/api` — services, routes, wiring | 121 | `npm test -w @ogt/api` |
 | `@ogt/api` — end-to-end, idempotency, delivery | 30 | included above |
-| `@ogt/web` — client and offline queue | 16 | `npm test -w @ogt/web` |
+| `@ogt/web` — client, offline queue, reachability | 21 | `npm test -w @ogt/web` |
 | `contracts` — Foundry | 108 | `forge test` in `packages/contracts` |
 
 Contract coverage is 100% of lines, statements, branches and functions on both
@@ -239,6 +239,33 @@ keys are user-held.
 
 ---
 
+## Built, but not yet reachable from the app
+
+A sweep comparing registered API routes against the calls the web client
+actually makes found twelve features that existed in the API and had no user
+facing entry point at all. Six were fixed — sign out, the attestation receipts,
+export, correcting a meal item, tone, "ask me less" — plus weight logging. A
+test now asserts the ones carrying a promise stay reachable, and it was written
+twice: the first version matched a bare method name and passed on a local helper
+that shared it, which mutation testing exposed.
+
+These remain built and unreachable, and are honest backlog rather than defects:
+
+| Feature | Endpoint |
+|---|---|
+| Lab report photo → markers | `POST /users/me/reports`, `GET /users/me/markers` |
+| Pantry ("what have I got in") | `PUT /users/me/pantry` |
+| Resolving a remembered fact | `POST /users/me/facts/:factId/resolve` |
+| Voice meal logging | `POST /meals/transcribe` |
+| Food autocomplete | `GET /users/me/foods` |
+| Active session list | `GET /auth/sessions` |
+
+Run the sweep yourself: the script lives in the session scratchpad, and the
+shape of it is simply every `app.<verb>('path')` in the API compared against
+every path string in the web client.
+
+---
+
 ## Contract capability the product does not yet use
 
 Stated here rather than left for somebody to discover by grepping.
@@ -301,7 +328,7 @@ supplies it.
 
 ```bash
 npm install
-npm test --workspaces                      # 256 tests, no network required
+npm test --workspaces                      # 262 tests, no network required
 npm run test:live -w @ogt/og               # 6 live checks; 4 more with a key
 cd packages/contracts && forge test        # 108 tests
 bash script/verify-fork.sh                 # deploy + exercise on forked Galileo
