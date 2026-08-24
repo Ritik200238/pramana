@@ -1,52 +1,94 @@
+/**
+ * The shell.
+ *
+ * Four states, and the important one is that they are resolved from the server
+ * rather than from local storage: loading, signed out, signed in but not
+ * onboarded, and ready. Trusting localStorage for "am I signed in" is how an
+ * app shows a logged-out person a dashboard skeleton for two seconds before
+ * bouncing them to a login screen.
+ */
+
 import { useCallback, useEffect, useState } from 'react'
 import { Onboarding } from './screens/Onboarding.tsx'
+import { SignIn } from './screens/SignIn.tsx'
 import { Today } from './screens/Today.tsx'
 import { MealFlow } from './screens/MealFlow.tsx'
 import { Chat } from './screens/Chat.tsx'
 import { Coach } from './screens/Coach.tsx'
-import { flushQueue, queueLength } from './lib/api.ts'
-import type { Targets } from './lib/api.ts'
+import { api, clearToken, flushQueue, queueLength, SESSION_EXPIRED } from './lib/api.ts'
 import './app.css'
 
 type Tab = 'today' | 'coach' | 'chat'
 
-const USER_KEY = 'ogt.userId'
-const TARGETS_KEY = 'ogt.targets'
+type Auth =
+  | { state: 'loading' }
+  | { state: 'signed-out' }
+  | { state: 'onboarding' }
+  | { state: 'ready' }
 
 export function App() {
-  const [userId, setUserId] = useState<string | null>(() => localStorage.getItem(USER_KEY))
-  // Kept only to decide whether onboarding is complete. Today fetches the live
-  // targets itself, because weight changes and they must not go stale here.
-  const [onboardedAt, setOnboardedAt] = useState<string | null>(() =>
-    localStorage.getItem(TARGETS_KEY),
-  )
+  const [auth, setAuth] = useState<Auth>({ state: 'loading' })
   const [tab, setTab] = useState<Tab>('today')
   const [capturing, setCapturing] = useState(false)
   const [pending, setPending] = useState(queueLength())
   const [refreshKey, setRefreshKey] = useState(0)
 
-  // Replay anything logged offline as soon as we are back.
+  /** Ask the server who we are. The only source of truth for session state. */
+  const resolveSession = useCallback(async () => {
+    try {
+      const me = await api.me()
+      setAuth({ state: me.onboarded ? 'ready' : 'onboarding' })
+    } catch {
+      setAuth({ state: 'signed-out' })
+    }
+  }, [])
+
   useEffect(() => {
+    void resolveSession()
+  }, [resolveSession])
+
+  // A 401 anywhere signs us out here, once, rather than in every screen.
+  useEffect(() => {
+    const onExpired = () => {
+      clearToken()
+      setAuth({ state: 'signed-out' })
+    }
+    window.addEventListener(SESSION_EXPIRED, onExpired)
+    return () => window.removeEventListener(SESSION_EXPIRED, onExpired)
+  }, [])
+
+  // Replay anything logged offline as soon as we are back — but only while
+  // signed in, because the queue drains through authenticated endpoints.
+  useEffect(() => {
+    if (auth.state !== 'ready') return
+
     const sync = () => {
       void flushQueue().then(({ sent, remaining }) => {
         setPending(remaining)
         if (sent > 0) setRefreshKey((key) => key + 1)
       })
     }
+
     sync()
     window.addEventListener('online', sync)
     return () => window.removeEventListener('online', sync)
-  }, [])
+  }, [auth.state])
 
-  const onboarded = useCallback((id: string, next: Targets) => {
-    localStorage.setItem(USER_KEY, id)
-    localStorage.setItem(TARGETS_KEY, JSON.stringify(next))
-    setUserId(id)
-    setOnboardedAt(JSON.stringify(next))
-  }, [])
+  if (auth.state === 'loading') {
+    return (
+      <div className="boot">
+        <div className="spinner" aria-hidden="true" />
+        <span className="sr-only">Loading</span>
+      </div>
+    )
+  }
 
-  if (!userId || !onboardedAt) {
-    return <Onboarding onDone={onboarded} />
+  if (auth.state === 'signed-out') {
+    return <SignIn onSignedIn={() => void resolveSession()} />
+  }
+
+  if (auth.state === 'onboarding') {
+    return <Onboarding onDone={() => setAuth({ state: 'ready' })} />
   }
 
   return (
@@ -61,13 +103,12 @@ export function App() {
         {tab === 'today' && (
           <Today
             key={refreshKey}
-            userId={userId}
             onCapture={() => setCapturing(true)}
             onOpenChat={() => setTab('chat')}
           />
         )}
-        {tab === 'coach' && <Coach userId={userId} />}
-        {tab === 'chat' && <Chat userId={userId} />}
+        {tab === 'coach' && <Coach />}
+        {tab === 'chat' && <Chat />}
       </main>
 
       <nav className="tabs tabs-4" aria-label="Sections">
@@ -103,7 +144,6 @@ export function App() {
 
       {capturing && (
         <MealFlow
-          userId={userId}
           onClose={() => setCapturing(false)}
           onLogged={() => {
             setCapturing(false)

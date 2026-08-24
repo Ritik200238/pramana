@@ -1050,3 +1050,91 @@ body {
   color: var(--accent);
   font-weight: 700;
 }
+
+/* ------------------------------------------------------------------ sign in */
+
+/*
+ * The boot state. It exists because session state is resolved from the server,
+ * which takes a round trip — and showing an app skeleton to someone who turns
+ * out to be signed out, then yanking it away, is worse than a moment of honest
+ * waiting.
+ */
+.boot {
+  min-height: 100%;
+  display: grid;
+  place-items: center;
+}
+
+.signin {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  padding: 64px 22px calc(32px + env(safe-area-inset-bottom));
+}
+
+.signin-head h1 {
+  margin: 0 0 10px;
+  font-size: 34px;
+  line-height: 1.1;
+  letter-spacing: -0.025em;
+  text-wrap: balance;
+}
+
+.signin-head p {
+  margin: 0;
+}
+
+.signin-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/*
+ * Wide tracking and a large size, because a six-digit code is read back against
+ * an SMS one character at a time. Tabular figures stop the field twitching as
+ * digits land.
+ */
+.code-input {
+  font-size: 28px;
+  letter-spacing: 0.4em;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.signin-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+/* Development only — the server refuses to return this in production. */
+.dev-code {
+  margin: 0;
+  padding: 10px 14px;
+  background: var(--surface-2);
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+  color: var(--ink-2);
+  font-size: 14px;
+}
+
+.dev-code strong {
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.15em;
+}
+
+.signin-foot {
+  margin-top: auto;
+  padding-top: 24px;
+  border-top: 1px solid var(--line);
+}
+
+.signin-foot p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+}
