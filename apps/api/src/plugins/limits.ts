@@ -55,6 +55,11 @@ const DEFAULT_IP_LIMIT = { max: 120, timeWindow: '1 minute' }
 export const MODEL_ROUTES: readonly string[] = [
   'POST /meals/draft',
   'POST /meals/draft-text',
+  // Speech is billed per second of audio and accepts the largest body this API
+  // takes, so leaving it off this list was the most expensive omission
+  // available: a caller could spend without limit inside the generic per-IP
+  // allowance.
+  'POST /meals/transcribe',
   'POST /chat',
   'POST /users/me/ask',
   'POST /users/me/suggest',

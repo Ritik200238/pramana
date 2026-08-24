@@ -267,5 +267,77 @@ test('the brain never carries the meal log', () => {
   // meals in the coach brain would double-store the most sensitive data and
   // blur what the token actually represents.
   const worker = code(read('jobs', 'coach-brain.ts'))
-  assert.doesNotMatch(worker, /meals/, 'the brain is what was learned, not what was eaten')
+  assert.doesNotMatch(worker, /meals/, 'the brain is what was learned, not what was eaten')
+})
+
+test('every route that reaches a model is cost-limited per user', async () => {
+  /*
+   * A list of route strings can drift from the routes it names, and nothing
+   * notices — the control simply stops applying. That is how
+   * POST /meals/transcribe ended up calling a speech model, billed per second
+   * of audio, with no per-user ceiling at all: only the generic per-IP
+   * allowance stood between one account and an unbounded bill.
+   *
+   * This derives the answer from the handlers instead of trusting the list.
+   */
+  const { MODEL_ROUTES } = await import('../src/plugins/limits.ts')
+
+  // Built from a list rather than written as one regex: an escape that goes
+  // wrong inside a pattern produces something that matches nothing and looks
+  // entirely correct. The first version of this test did exactly that — a stray
+  // control character meant it detected no routes at all while passing.
+  const MODEL_CALLS = [
+    'complete',
+    'readMeal',
+    'readMealText',
+    'readLabReport',
+    'suggestMeal',
+    'askOwnData',
+    'writeDayLine',
+    'writeWeekReview',
+    'transcribe',
+  ]
+  const callsAModel = (body: string) =>
+    MODEL_CALLS.some((name) => body.includes(name + '(') || body.includes(name + ' ('))
+
+  const uncovered: string[] = []
+
+  for (const file of ['meals.ts', 'chat.ts', 'coach.ts', 'day.ts', 'users.ts']) {
+    const source = code(read('routes', file))
+    const registrations = [
+      ...source.matchAll(/app\.(get|post|put|patch|delete)\(\s*'([^']+)'/g),
+    ]
+
+    for (const [index, match] of registrations.entries()) {
+      const start = match.index ?? 0
+      const end = registrations[index + 1]?.index ?? source.length
+      const handler = source.slice(start, end)
+      if (!callsAModel(handler)) continue
+
+      const route = `${match[1]!.toUpperCase()} ${match[2]}`
+      if (!MODEL_ROUTES.includes(route)) uncovered.push(`${route} (${file})`)
+    }
+  }
+
+  assert.deepEqual(uncovered, [], 'these routes reach a model with no per-user cost limit')
+})
+
+test('no cost-limited route names a path that does not exist', async () => {
+  // The other direction: a renamed route leaves a dead string behind, and the
+  // limit it described silently protects nothing.
+  const { MODEL_ROUTES } = await import('../src/plugins/limits.ts')
+  const { IDEMPOTENT_ROUTES } = await import('../src/plugins/idempotency.ts')
+
+  let declared = ''
+  for (const file of ['meals.ts', 'chat.ts', 'coach.ts', 'day.ts', 'users.ts', 'auth.ts']) {
+    declared += code(read('routes', file))
+  }
+
+  for (const route of [...MODEL_ROUTES, ...IDEMPOTENT_ROUTES]) {
+    const path = route.slice(route.indexOf(' ') + 1)
+    assert.ok(
+      declared.includes(`'${path}'`),
+      `${route} is declared but no route registers that path`,
+    )
+  }
 })
