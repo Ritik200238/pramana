@@ -13,19 +13,23 @@
  *      told their meal is saved, never asked to retry something they already did.
  */
 
+/*
+ * Shared shapes come from the package that owns them.
+ *
+ * `Targets` and `Confidence` used to be restated here, which made them a copy
+ * of a definition living somewhere else — the exact arrangement that has drifted
+ * every other time it appeared in this repository. Imported as types only, so
+ * nothing from the package reaches the browser bundle.
+ */
+import type { Confidence, Targets } from '@ogt/core'
+
+export type { Confidence, Targets }
+
 // ------------------------------------------------------------------- types
 
-export interface Targets {
-  bmr: number
-  tdee: number
-  calories: number
-  proteinG: number
-  fatG: number
-  carbG: number
-  safetyNotes: string[]
-}
 
-export type Confidence = 'exact' | 'confirmed' | 'rough'
+
+
 
 export interface DraftItem {
   id: string

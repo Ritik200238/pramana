@@ -360,3 +360,24 @@ describe('every built feature has a way in', () => {
     expect(unreachable).toEqual([])
   })
 })
+
+describe('shared shapes are not copied', () => {
+  test('Targets and Confidence come from the package that owns them', async () => {
+    const { readFileSync } = await import('node:fs')
+    const source = readFileSync('src/lib/api.ts', 'utf8')
+
+    /*
+     * These were restated here, which made them a copy of a definition that
+     * lives elsewhere. Every hand-maintained copy in this repository has
+     * drifted from its original — prices from the catalogue, capabilities from
+     * the model list, a table list from the schema — and none of those failed a
+     * test, because the test mirrored the copy.
+     *
+     * Imported as types only, so nothing from the package reaches the bundle.
+     * The build is byte-identical either way.
+     */
+    expect(source).toMatch(/import type \{[^}]*Targets[^}]*\} from '@ogt\/core'/)
+    expect(source).not.toMatch(/export interface Targets \{/)
+    expect(source).not.toMatch(/export type Confidence =/)
+  })
+})

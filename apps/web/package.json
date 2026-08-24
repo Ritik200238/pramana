@@ -12,7 +12,8 @@
   },
   "dependencies": {
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "@ogt/core": "*"
   },
   "devDependencies": {
     "@types/react": "^19.0.2",
