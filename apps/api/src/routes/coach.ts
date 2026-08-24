@@ -40,7 +40,7 @@ export async function registerCoachRoutes(
   deps: CoachRouteDeps,
 ): Promise<void> {
   /** Feature 10 — what to eat next, from what is actually available. */
-  app.post('/users/:userId/suggest', async (request, reply) => {
+  app.post('/users/me/suggest', async (request, reply) => {
     const userId = currentUserId(request)
     const body = z
       .object({
@@ -85,7 +85,7 @@ export async function registerCoachRoutes(
   })
 
   /** Feature 11 — one line about today, and one thing to change. */
-  app.get('/users/:userId/day-line', async (request, reply) => {
+  app.get('/users/me/day-line', async (request, reply) => {
     const userId = currentUserId(request)
     const { utcOffsetMinutes } = OffsetQuery.parse(request.query)
 
@@ -114,7 +114,7 @@ export async function registerCoachRoutes(
   })
 
   /** Feature 14 — the week, and one adjustment. */
-  app.get('/users/:userId/weekly', async (request, reply) => {
+  app.get('/users/me/weekly', async (request, reply) => {
     const userId = currentUserId(request)
     const { utcOffsetMinutes } = OffsetQuery.parse(request.query)
 
@@ -138,7 +138,7 @@ export async function registerCoachRoutes(
   })
 
   /** Feature 12 — ask your own data anything. */
-  app.post('/users/:userId/ask', async (request, reply) => {
+  app.post('/users/me/ask', async (request, reply) => {
     const userId = currentUserId(request)
     const body = z
       .object({
@@ -178,7 +178,7 @@ export async function registerCoachRoutes(
   })
 
   /** Feature 15 — the streak, reported as it stands now rather than when last written. */
-  app.get('/users/:userId/streak', async (request, reply) => {
+  app.get('/users/me/streak', async (request, reply) => {
     const userId = currentUserId(request)
     const { utcOffsetMinutes } = OffsetQuery.parse(request.query)
     const streak = await getStreak(deps.db, userId, new Date(), utcOffsetMinutes)
@@ -186,7 +186,7 @@ export async function registerCoachRoutes(
   })
 
   /** Feature 16 — read a lab report. Explains what markers measure; never diagnoses. */
-  app.post('/users/:userId/reports', async (request, reply) => {
+  app.post('/users/me/reports', async (request, reply) => {
     const userId = currentUserId(request)
     const body = z.object({ imageUrl: z.string().min(1) }).parse(request.body)
 
@@ -280,7 +280,7 @@ export async function registerCoachRoutes(
   })
 
   /** Feature 17 — one marker over time. */
-  app.get('/users/:userId/markers', async (request, reply) => {
+  app.get('/users/me/markers', async (request, reply) => {
     const userId = currentUserId(request)
     const { code } = z.object({ code: z.string().optional() }).parse(request.query)
 
@@ -327,7 +327,7 @@ export async function registerCoachRoutes(
    *
    * No hosted API can produce this. That is precisely why it is here.
    */
-  app.get('/users/:userId/proof', async (request, reply) => {
+  app.get('/users/me/proof', async (request, reply) => {
     const userId = currentUserId(request)
     const { limit } = z
       .object({ limit: z.coerce.number().int().min(1).max(200).default(50) })
@@ -368,7 +368,7 @@ export async function registerCoachRoutes(
   })
 
   /** The kitchen. Feeds feature 10 so suggestions use what they actually have. */
-  app.put('/users/:userId/pantry', async (request, reply) => {
+  app.put('/users/me/pantry', async (request, reply) => {
     const userId = currentUserId(request)
     const { items } = z
       .object({ items: z.array(z.string().min(1).max(60)).max(80) })

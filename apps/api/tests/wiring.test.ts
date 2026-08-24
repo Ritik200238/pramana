@@ -152,7 +152,7 @@ test('every route file that reaches a model also calls the gate', () => {
 
 test('free-text pantry input is screened before it can reach a suggestion', () => {
   const source = code(read('routes', 'coach.ts'))
-  const pantryAt = source.indexOf("'/users/:userId/pantry'")
+  const pantryAt = source.indexOf("'/users/me/pantry'")
   assert.ok(pantryAt > -1)
   const handler = source.slice(pantryAt, pantryAt + 900)
   assert.match(handler, /guard\(/, 'pantry items end up in the suggestion prompt')

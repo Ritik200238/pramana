@@ -40,7 +40,7 @@ export async function registerExportRoutes(
   app: FastifyInstance,
   deps: ExportRouteDeps,
 ): Promise<void> {
-  app.get('/users/:userId/export', async (request, reply) => {
+  app.get('/users/me/export', async (request, reply) => {
     const userId = currentUserId(request)
 
     const [user] = await deps.db.select().from(users).where(eq(users.id, userId)).limit(1)
@@ -126,7 +126,7 @@ export async function registerExportRoutes(
   })
 
   /** CSV of meals, for a spreadsheet or a dietitian who does not want JSON. */
-  app.get('/users/:userId/export.csv', async (request, reply) => {
+  app.get('/users/me/export.csv', async (request, reply) => {
     const userId = currentUserId(request)
 
     const rows = await deps.db

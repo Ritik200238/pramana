@@ -26,7 +26,7 @@ export interface DayRouteDeps {
 
 export async function registerDayRoutes(app: FastifyInstance, deps: DayRouteDeps): Promise<void> {
   /** Today: totals, protein remaining, meals, and the thesis metric. */
-  app.get('/users/:userId/today', async (request, reply) => {
+  app.get('/users/me/today', async (request, reply) => {
     const userId = currentUserId(request)
     const { utcOffsetMinutes } = OffsetQuery.parse(request.query)
 
@@ -35,7 +35,7 @@ export async function registerDayRoutes(app: FastifyInstance, deps: DayRouteDeps
   })
 
   /** Meals eaten repeatedly — one tap, zero questions. */
-  app.get('/users/:userId/usuals', async (request, reply) => {
+  app.get('/users/me/usuals', async (request, reply) => {
     const userId = currentUserId(request)
     const usuals = await findUsuals({ db: deps.db, userId })
     return reply.status(200).send({ usuals })
@@ -101,7 +101,7 @@ export async function registerDayRoutes(app: FastifyInstance, deps: DayRouteDeps
   })
 
   /** Search, with the user's own versions ranked above shared reference data. */
-  app.get('/users/:userId/foods', async (request, reply) => {
+  app.get('/users/me/foods', async (request, reply) => {
     const userId = currentUserId(request)
     const { q, limit } = z
       .object({ q: z.string().min(1).max(80), limit: z.coerce.number().int().min(1).max(20).default(8) })
@@ -117,7 +117,7 @@ export async function registerDayRoutes(app: FastifyInstance, deps: DayRouteDeps
    * Polled by the client. Returns null almost always — silence is this
    * feature's default state, and the limits live in the service, not here.
    */
-  app.get('/users/:userId/proactive', async (request, reply) => {
+  app.get('/users/me/proactive', async (request, reply) => {
     const userId = currentUserId(request)
     const { utcOffsetMinutes } = OffsetQuery.parse(request.query)
 
@@ -129,7 +129,7 @@ export async function registerDayRoutes(app: FastifyInstance, deps: DayRouteDeps
   })
 
   /** "This is sorted." Closes a topic permanently so it is never raised again. */
-  app.post('/users/:userId/facts/:factId/resolve', async (request, reply) => {
+  app.post('/users/me/facts/:factId/resolve', async (request, reply) => {
     const { factId } = z.object({ factId: z.string().uuid() }).parse(request.params)
     const userId = currentUserId(request)
 
