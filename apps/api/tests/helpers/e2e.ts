@@ -42,6 +42,10 @@ const TEST_ENV = {
   OG_STORAGE_PRIVATE_KEY: `0x${'11'.repeat(32)}`,
   OG_NETWORK: 'testnet',
   ADMIN_TOKEN: 'test-admin-token-that-is-long-enough-to-pass',
+  // Present so the derived-key paths are exercised rather than skipped. Without
+  // it, record keys are never created and half the 0G surface stays inert in
+  // tests while looking fine — which is how the real thing went unnoticed.
+  OG_ANCHOR_MASTER_SEED: 'a-test-master-seed-long-enough-to-be-accepted',
 } as const
 
 export interface Harness {

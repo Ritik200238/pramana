@@ -192,7 +192,7 @@ export async function buildServer(overrides: ServerOverrides = {}) {
   await registerChatRoutes(app, { db, openai })
   await registerDayRoutes(app, { db })
   await registerCoachRoutes(app, { db, openai })
-  await registerExportRoutes(app, { db })
+  await registerExportRoutes(app, { db, masterSeed: config.OG_ANCHOR_MASTER_SEED })
 
   app.setErrorHandler((error, request, reply) => {
     /*

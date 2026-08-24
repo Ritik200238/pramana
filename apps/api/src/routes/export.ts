@@ -16,6 +16,8 @@ import { z } from 'zod'
 import { desc, eq, inArray } from 'drizzle-orm'
 import type { Database } from '../db/index.ts'
 import { currentUserId } from '../plugins/auth.ts'
+import { deriveOwnerAccount, publicKeyFor } from '@ogt/og'
+import { ensureRecordKey } from '../services/record-key.ts'
 import {
   households,
   safetyEvents,
@@ -36,6 +38,13 @@ import {
 
 export interface ExportRouteDeps {
   db: Database
+  /**
+   * Derives the key a person's records are encrypted to.
+   *
+   * Needed so somebody can be handed their own key and read their 0G Storage
+   * copies without this API existing. Absent means that offer cannot be made.
+   */
+  masterSeed?: string | undefined
 }
 
 export async function registerExportRoutes(
@@ -45,8 +54,43 @@ export async function registerExportRoutes(
   app.get('/users/me/export', async (request, reply) => {
     const userId = currentUserId(request)
 
+    /*
+     * Whether to include the key that makes the rest portable.
+     *
+     * Opt-in rather than default, and the distinction is the point. A plain
+     * export is a health record — sensitive, and something somebody might
+     * reasonably hand to a doctor. Adding the private key makes it a
+     * credential as well: whoever holds it can read every future snapshot and
+     * anchor on chain as that person. Those are different objects and should
+     * not be produced by the same click.
+     */
+    const { includeRecordKey } = z
+      .object({ includeRecordKey: z.enum(['true', 'false']).optional() })
+      .parse(request.query)
+
     const [user] = await deps.db.select().from(users).where(eq(users.id, userId)).limit(1)
     if (!user) return reply.status(404).send({ error: 'not_found' })
+
+    /*
+     * Derived once, and recorded.
+     *
+     * The public half was previously read from the user row, which is only
+     * populated when a background worker first runs — so an export taken before
+     * then handed somebody a private key alongside a null public key and a null
+     * address. Deriving both here, and writing them through the same path the
+     * workers use, means the set is always coherent and the seed-drift check
+     * applies to it.
+     */
+    const recordAccount =
+      includeRecordKey === 'true' && deps.masterSeed
+        ? await (async () => {
+            const recordPubKey = await ensureRecordKey(deps.db, deps.masterSeed!, userId)
+            const wallet = deriveOwnerAccount(deps.masterSeed!, userId)
+            // Built field by field: spreading a Wallet drops privateKey, which
+            // is a getter rather than an own property.
+            return { privateKey: wallet.privateKey, address: wallet.address, recordPubKey }
+          })()
+        : null
 
     const mealRows = await deps.db
       .select()
@@ -102,7 +146,9 @@ export async function registerExportRoutes(
         diet: user.diet,
         cooks: user.cooks,
         tone: user.tone,
-        recordPubKey: user.recordPubKey,
+        // Taken from the derivation when one just happened, because the row
+        // above was read before it was written.
+        recordPubKey: recordAccount?.recordPubKey ?? user.recordPubKey,
       },
       meals: mealRows.map((meal) => ({ ...meal, items: itemsByMeal.get(meal.id) ?? [] })),
       weights,
@@ -140,9 +186,15 @@ export async function registerExportRoutes(
       /** The kitchen this person belongs to, if any. */
       household: household[0] ?? null,
       /**
-       * The retrieval keys for the encrypted copies on 0G Storage. Combined
-       * with the user's own private key, these are sufficient to reconstruct
-       * the record without this API existing at all.
+       * The retrieval keys for the encrypted copies on 0G Storage.
+       *
+       * On their own these are pointers to ciphertext. Reading them needs the
+       * record key, which is derived and held by us — so for a long time this
+       * section was, in practice, useless to the person it was given to, while
+       * a comment here claimed it was "sufficient to reconstruct the record
+       * without this API existing at all". It was not.
+       *
+       * Ask for `?includeRecordKey=true` and it becomes true.
        */
       ogStorage: snaps.map((snap) => ({
         rootHashes: snap.rootHashes,
@@ -151,6 +203,36 @@ export async function registerExportRoutes(
         anchorTxHash: snap.anchorTxHash,
         createdAt: snap.createdAt,
       })),
+      ...(recordAccount
+        ? {
+            /**
+             * The key the records above are encrypted to.
+             *
+             * Handing it over is what turns "you own your record" from a
+             * description of our intentions into something a person can act
+             * on: with this and the root hashes, the 0G Storage copies are
+             * readable forever, by them, with no part of this company
+             * involved.
+             *
+             * It is also the account that owns their anchors on chain, so it
+             * is a credential and is labelled as one. Given only when asked
+             * for, never logged, and never in the CSV.
+             */
+            recordKey: {
+              privateKey: recordAccount!.privateKey,
+              publicKey: recordAccount!.recordPubKey,
+              address: recordAccount!.address,
+              warning:
+                'This key can read every snapshot above and act as you on 0G Chain. ' +
+                'Anyone who has it has that ability. Store it the way you would store ' +
+                'the password to your bank, and do not send this file to anybody.',
+              howToUse:
+                'Each entry in ogStorage lists root hashes. Fetch them from a 0G Storage ' +
+                'indexer and decrypt with this key using ECIES — the same scheme the 0G ' +
+                'storage SDK uses on upload.',
+            },
+          }
+        : {}),
     }
 
     reply.header('Content-Type', 'application/json; charset=utf-8')

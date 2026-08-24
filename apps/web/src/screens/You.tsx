@@ -277,6 +277,35 @@ export function You({ onSignedOut }: YouProps) {
             Download everything
           </a>
         </div>
+
+        {/*
+          * The key is a separate, deliberate act.
+          *
+          * The plain export is a health record — sensitive, and something you
+          * might reasonably hand to a doctor. Adding the key makes it a
+          * credential too: whoever holds it can read every future snapshot and
+          * act as you on chain. Two different objects, two different buttons.
+          */}
+        <details className="trust-note">
+          <summary>Take your key as well</summary>
+          <p>
+            Your records are also stored encrypted on 0G, and the copies there outlive this
+            company. Reading them needs the key they are encrypted to — which we hold today,
+            because signing in here is a phone number and nothing else.
+          </p>
+          <p>
+            You can take a copy of that key. With it, the encrypted copies are yours to read
+            forever, with none of this involved.
+          </p>
+          <p>
+            <strong>It is also a credential.</strong> Anyone holding it can read your records
+            and act as you on 0G Chain. Keep it the way you keep a bank password, and do not
+            send that file to anyone.
+          </p>
+          <a className="secondary" href={api.exportWithKeyUrl()} download>
+            Download with my key
+          </a>
+        </details>
       </section>
 
       {/* -------------------------------------------------------- account */}

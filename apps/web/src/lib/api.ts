@@ -531,6 +531,16 @@ export const api = {
   exportUrl() {
     return `${BASE}/users/me/export`
   },
+
+  /**
+   * The export that also carries the key.
+   *
+   * Separate from the plain one deliberately — see the note on the button. A
+   * health record and a credential should not come out of the same click.
+   */
+  exportWithKeyUrl() {
+    return `${BASE}/users/me/export?includeRecordKey=true`
+  },
 }
 
 // ------------------------------------------------------------ offline queue
