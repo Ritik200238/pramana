@@ -51,6 +51,10 @@ export const IDEMPOTENT_ROUTES: readonly string[] = [
   'POST /meals/repeat',
   'POST /users/me/weight',
   'POST /users/me/profile',
+  // Creates a lab report and reads it with a vision model. A retry, a double
+  // tap or an offline replay produced two reports and paid for the reading
+  // twice — the most expensive write in the product to repeat by accident.
+  'POST /users/me/reports',
 ]
 
 export interface IdempotencyOptions {
