@@ -69,3 +69,13 @@ export {
   type AnchorResult,
   type SignedAnchor,
 } from './anchor.ts'
+
+export {
+  COACH_ABI,
+  COACH_SIGNATURE_TTL_SECONDS,
+  CoachClient,
+  brainMetadataHash,
+  type CoachClientConfig,
+  type EvolveResult,
+  type MintResult,
+} from './coach-agent.ts'

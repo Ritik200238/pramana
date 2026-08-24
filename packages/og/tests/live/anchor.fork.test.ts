@@ -19,6 +19,7 @@ import assert from 'node:assert/strict'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { ethers } from 'ethers'
 import { AnchorClient, deriveOwnerAccount, signAnchor } from '../../src/anchor.ts'
+import { CoachClient, brainMetadataHash } from '../../src/coach-agent.ts'
 
 const PORT = 8547
 const RPC = `http://127.0.0.1:${PORT}`
@@ -30,13 +31,16 @@ const RELAYER_KEY = '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf
 
 let anvil: ChildProcess | null = null
 let contractAddress = ''
+let coachAddress = ''
 
 /** Compiled by `forge build`; read rather than duplicated here. */
-async function deployedBytecode(): Promise<{ abi: unknown[]; bytecode: string }> {
+async function deployedBytecode(
+  name = 'HealthRecordAnchor',
+): Promise<{ abi: unknown[]; bytecode: string }> {
   const { readFileSync } = await import('node:fs')
   const { fileURLToPath } = await import('node:url')
   const path = fileURLToPath(
-    new URL('../../../contracts/out/HealthRecordAnchor.sol/HealthRecordAnchor.json', import.meta.url),
+    new URL(`../../../contracts/out/${name}.sol/${name}.json`, import.meta.url),
   )
   const artifact = JSON.parse(readFileSync(path, 'utf8')) as {
     abi: unknown[]
@@ -67,6 +71,18 @@ before(async () => {
   const contract = await factory.deploy(deployer.address)
   await contract.waitForDeployment()
   contractAddress = await contract.getAddress()
+
+  const coachArtifact = await deployedBytecode('CoachAgent')
+  const coachFactory = new ethers.ContractFactory(
+    coachArtifact.abi as ethers.InterfaceAbi,
+    coachArtifact.bytecode,
+    deployer,
+  )
+  // No oracle: sealed-key transfers stay disabled rather than accepting
+  // unverified proofs, which is the right default before a verifier exists.
+  const coachContract = await coachFactory.deploy(deployer.address, ethers.ZeroAddress)
+  await coachContract.waitForDeployment()
+  coachAddress = await coachContract.getAddress()
 })
 
 after(async () => {
@@ -213,4 +229,86 @@ test('derivation is deterministic, and distinct per user', () => {
 
 test('a short master seed is refused', () => {
   assert.throws(() => deriveOwnerAccount('too-short', 'user-1'), /at least 32/)
+})
+
+// ----------------------------------------------------------------- the coach
+
+function coachClient(): CoachClient {
+  return new CoachClient({
+    rpcUrl: RPC,
+    contractAddress: coachAddress,
+    relayerPrivateKey: RELAYER_KEY,
+    chainId: CHAIN_ID,
+  })
+}
+
+test('a coach is minted to the user, paid for by the relayer', async () => {
+  const client = coachClient()
+  const owner = deriveOwnerAccount('a-master-seed-long-enough-to-be-accepted', 'coach-user-1')
+
+  const brain = JSON.stringify({ foods: ['dal as they make it'], facts: ['lactose intolerant'] })
+  const result = await client.mint(owner, {
+    rootHash: ethers.keccak256(ethers.toUtf8Bytes('brain-root')),
+    metadataHash: brainMetadataHash(brain),
+    schemaVersion: 1,
+    nonce: 1n,
+  })
+
+  assert.match(result.txHash, /^0x[0-9a-f]{64}$/)
+  // The whole claim: the coach belongs to the person, not to whoever paid.
+  assert.equal(await client.coachCount(owner.address), 1)
+  assert.equal(await client.coachCount(client.relayerAddress), 0)
+  assert.equal(await client.versionCount(result.tokenId), 1)
+})
+
+test('the brain evolves, and the history keeps every version', async () => {
+  const client = coachClient()
+  const owner = deriveOwnerAccount('a-master-seed-long-enough-to-be-accepted', 'coach-user-2')
+
+  const minted = await client.mint(owner, {
+    rootHash: ethers.keccak256(ethers.toUtf8Bytes('brain-v1')),
+    metadataHash: brainMetadataHash('{"learned":10}'),
+    schemaVersion: 1,
+    nonce: 1n,
+  })
+
+  const evolved = await client.evolve(owner, {
+    tokenId: minted.tokenId,
+    rootHash: ethers.keccak256(ethers.toUtf8Bytes('brain-v2')),
+    metadataHash: brainMetadataHash('{"learned":340}'),
+    learnedCount: 340,
+    nonce: 2n,
+  })
+
+  assert.equal(evolved.version, 1)
+  // "My coach has learned 340 things" has to be checkable against a chain,
+  // not a number rendered from our own database.
+  assert.equal(await client.versionCount(minted.tokenId), 2)
+})
+
+test('a mint nonce cannot be spent twice', async () => {
+  const client = coachClient()
+  const owner = deriveOwnerAccount('a-master-seed-long-enough-to-be-accepted', 'coach-user-3')
+
+  const input = {
+    rootHash: ethers.keccak256(ethers.toUtf8Bytes('brain')),
+    metadataHash: brainMetadataHash('{}'),
+    schemaVersion: 1,
+    nonce: 99n,
+  }
+
+  await client.mint(owner, input)
+  assert.equal(await client.nonceUsed(owner.address, 99n), true)
+
+  // This is what stops a retry after a lost receipt minting a second coach.
+  await assert.rejects(client.mint(owner, input))
+  assert.equal(await client.coachCount(owner.address), 1)
+})
+
+test('the metadata hash commits to the exact brain', () => {
+  // If a storage provider returned different bytes at the same address, this
+  // is the value that would no longer match.
+  const brain = '{"foods":["poha"],"learned":1}'
+  assert.equal(brainMetadataHash(brain), brainMetadataHash(brain))
+  assert.notEqual(brainMetadataHash(brain), brainMetadataHash(`${brain} `))
 })
