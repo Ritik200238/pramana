@@ -506,6 +506,38 @@ test('the record key is created on demand and never changes', async () => {
   })
 })
 
+test('expired codes and dead sessions are actually purged', async () => {
+  await withHarness(async (h) => {
+    const { token } = await signIn(h, '9700000007')
+
+    // Age everything past its expiry, as time would.
+    await h.db.execute("update otp_challenges set expires_at = now() - interval '1 day'")
+    await h.db.execute("update sessions set expires_at = now() - interval '1 day'")
+
+    const { startScheduler } = await import('../src/jobs/scheduler.ts')
+    const scheduler = startScheduler({
+      db: h.db,
+      storage: { signerAddress: '0x' } as never,
+      logger: h.app.log,
+    })
+    scheduler.stop()
+    await scheduler.runOnce()
+
+    // purgeExpired existed from the beginning, said expired rows are liability
+    // rather than data, and was called by nothing — so every one-time code and
+    // dead session was kept forever, on the table every request reads.
+    for (const table of ['otp_challenges', 'sessions']) {
+      const rows = await h.db.execute(`select count(*)::int as count from ${table}`)
+      const list = (rows as unknown as { rows?: Array<{ count: number }> }).rows ?? rows
+      assert.equal((list as Array<{ count: number }>)[0]?.count, 0, `${table} was not purged`)
+    }
+
+    // And the now-expired session really is dead.
+    const after = await h.app.inject({ method: 'GET', url: '/auth/me', headers: auth(token) })
+    assert.equal(after.statusCode, 401)
+  })
+})
+
 test('readiness reports the database it actually depends on', async () => {
   await withHarness(async (h) => {
     const response = await h.app.inject({ method: 'GET', url: '/ready' })

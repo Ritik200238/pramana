@@ -19,6 +19,7 @@ import type { Database } from '../db/index.ts'
 import { snapshots, users } from '../db/schema.ts'
 import { runSnapshot } from './snapshot.ts'
 import { ensureRecordKey } from '../services/record-key.ts'
+import { purgeExpired } from '../services/auth.ts'
 
 export interface SchedulerOptions {
   db: Database
@@ -56,6 +57,26 @@ export function startScheduler(options: SchedulerOptions): Scheduler {
     running = true
 
     try {
+      /*
+       * Housekeeping first, before any early return.
+       *
+       * `purgeExpired` has existed since sessions did, with a comment saying
+       * expired rows are liability rather than data, and nothing ever called
+       * it — so every one-time code and every dead session was kept forever, on
+       * the table each authenticated request reads.
+       *
+       * It runs ahead of the snapshot work deliberately. Placing it after cost
+       * an outage in miniature: a deployment with no master seed returns early
+       * below, and cleanup that lives past that line never happens on exactly
+       * the deployments least likely to notice.
+       */
+      try {
+        await purgeExpired(options.db)
+      } catch (error) {
+        // Never fail a pass over cleanup.
+        options.logger.warn({ err: error }, 'purging expired auth rows failed')
+      }
+
       const due = await findUsersDueForSnapshot(options.db, batchSize)
       let succeeded = 0
       let failed = 0

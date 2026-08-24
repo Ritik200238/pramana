@@ -191,16 +191,3 @@ export async function runSnapshot(input: RunSnapshotInput): Promise<RunSnapshotR
   }
 }
 
-/** Users with a record key set and no snapshot yet anchored on chain. */
-export async function findUnanchoredSnapshots(db: Database, limit = 50) {
-  return db
-    .select({
-      id: snapshots.id,
-      userId: snapshots.userId,
-      rootHashes: snapshots.rootHashes,
-      schemaVersion: snapshots.schemaVersion,
-    })
-    .from(snapshots)
-    .where(isNull(snapshots.anchorTxHash))
-    .limit(limit)
-}
