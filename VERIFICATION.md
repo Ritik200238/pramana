@@ -19,7 +19,7 @@ Last updated: 2026-08-24.
 |---|---|---|
 | `@ogt/core` — targets, safety, questions | 45 | `npm test -w @ogt/core` |
 | `@ogt/og` — router, storage, encryption, speech, claims, cost | 78 | `npm test -w @ogt/og` |
-| `@ogt/api` — services, routes, wiring | 177 | `npm test -w @ogt/api` |
+| `@ogt/api` — services, routes, wiring | 181 | `npm test -w @ogt/api` |
 | `@ogt/api` — end-to-end, idempotency, delivery | 30 | included above |
 | `@ogt/web` — client, offline queue, reachability | 21 | `npm test -w @ogt/web` |
 | `contracts` — Foundry | 108 | `forge test` in `packages/contracts` |
@@ -258,6 +258,28 @@ drawn from research, not an observation.
 
 ---
 
+## The shape every defect here has had
+
+Sixteen sweeps, thirteen of them yielding, and the productive ones are all one
+pattern: **something maintained by hand that mirrors something authoritative.**
+
+A price list mirroring the catalogue. A capability flag mirroring
+`supported_parameters`. A compliance claim mirroring a published interface. A
+table list mirroring the schema. A route list mirroring the routes. An example
+env file mirroring the config.
+
+Every one of them drifted, and none failed a test — because the test mirrored
+the same hand-maintained list. The fix was the same each time: derive the check
+from the authoritative source, then prove the check fails when the thing it
+guards is broken.
+
+That last step matters. Three guards written during these sweeps were themselves
+inert on the first attempt — one contained a control character from a shell
+escaping mistake and matched nothing at all while passing. A guard nobody has
+tried to break is not evidence.
+
+---
+
 ## Sweeps run, and what each found
 
 Every defect found in this repository has had the same shape: something built
@@ -283,6 +305,8 @@ piece did its own job properly. They are only visible from outside.
 | Operational blind spots vs the account docs | nothing watched the balance the product runs on |
 | A claimed standard vs its published interface | the coach was described as ERC-7857 and is not |
 | A hand-maintained list vs the schema it mirrors | the export omitted seven tables, receipts included |
+| Migrations vs the schema | clean — no drift |
+| .env.example vs the config it documents | three operational knobs undocumented |
 | Events and timers with no counterpart | nothing; all clean |
 
 Guards were left behind for five of the six, each verified by mutation rather
@@ -441,7 +465,7 @@ supplies it.
 
 ```bash
 npm install
-npm test --workspaces                      # 321 tests, no network required
+npm test --workspaces                      # 325 tests, no network required
 npm run test:live -w @ogt/og               # 6 live checks; 4 more with a key
 cd packages/contracts && forge test        # 108 tests
 bash script/verify-fork.sh                 # deploy + exercise on forked Galileo
