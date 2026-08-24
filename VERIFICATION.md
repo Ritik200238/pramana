@@ -20,8 +20,8 @@ Last updated: 2026-08-24.
 | `@ogt/core` — targets, safety, questions | 45 | `npm test -w @ogt/core` |
 | `@ogt/og` — router, storage, payments | 38 | `npm test -w @ogt/og` |
 | `@ogt/api` — services, routes, wiring | 108 | `npm test -w @ogt/api` |
-| `@ogt/api` — end-to-end | 14 | included above |
-| `@ogt/web` — client and offline queue | 13 | `npm test -w @ogt/web` |
+| `@ogt/api` — end-to-end and idempotency | 20 | included above |
+| `@ogt/web` — client and offline queue | 16 | `npm test -w @ogt/web` |
 | `contracts` — Foundry | 80 | `forge test` in `packages/contracts` |
 
 Contract coverage is 100% of lines, statements, branches and functions on both
@@ -81,6 +81,8 @@ Each of these is asserted by a test that fails if the property breaks:
 - Requesting codes for many different numbers from one host is capped.
 - The operator endpoint refuses a signed-in user without the operator secret.
 - A profile that fails the safety gate is refused and written nowhere.
+- A replayed write is applied once; a key reused for different content is
+  refused; two concurrent replays cannot both run the write.
 
 ### Dependencies
 
@@ -112,7 +114,17 @@ pc.0g.ai against a wallet holding 0G. Without one we have not measured:
 That last one matters most: TEE verification is the binding that makes 0G
 irremovable from this product, and it has been verified only in unit tests.
 
-**To close it:** a funded `sk-` key in `OG_ROUTER_API_KEY`.
+The harness is written and waiting. `packages/og/tests/live/inference.test.ts`
+asserts that a real request returns a verified TEE receipt naming the provider
+that ran it, that the meal-vision path attests, and that every chain answers.
+Without a key those four cases **skip loudly** rather than passing quietly — a
+suite that goes green because it did nothing is worse than one that fails.
+
+**To close it:** a funded `sk-` key, then
+
+```bash
+OG_ROUTER_API_KEY=sk-... npm run test:live -w @ogt/og
+```
 
 ### Contracts on the live network
 
@@ -161,7 +173,6 @@ drawn from research, not an observation.
 - **Dev-dependency advisories.** `npm audit` reports 8 findings in the
   vite/vitest tree. Production dependencies are clean; these affect the local
   dev server and test runner only.
-- **No request idempotency.** A retried write can double-log a meal.
 
 ---
 
@@ -169,8 +180,8 @@ drawn from research, not an observation.
 
 ```bash
 npm install
-npm test --workspaces                      # 218 tests, no network required
-npm run test:live -w @ogt/og               # 6 checks against the live Router
+npm test --workspaces                      # 227 tests, no network required
+npm run test:live -w @ogt/og               # 6 live checks; 4 more with a key
 cd packages/contracts && forge test        # 80 tests
 bash script/verify-fork.sh                 # deploy + exercise on forked Galileo
 ```
