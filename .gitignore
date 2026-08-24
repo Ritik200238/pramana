@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+*.log
+coverage/
+cache/
+artifacts/
+typechain-types/
+bench-results/
+
+# Vendored 0G reference material — SDKs and docs cloned for reference, not our code.
+oglabs resources/

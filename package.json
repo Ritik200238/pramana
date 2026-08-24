@@ -1,0 +1,21 @@
+{
+  "name": "ogt",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present"
+  },
+  "overrides": {
+    "ws": "^8.20.2",
+    "axios": "^1.7.9"
+  }
+}
