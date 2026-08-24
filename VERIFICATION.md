@@ -98,6 +98,27 @@ Measured against Galileo at block 51,177,774:
 
 At the observed 4 gwei that is roughly 0.0178 0G to deploy.
 
+### Performance, measured rather than asserted
+
+Query plans taken against real Postgres with realistic row counts, not reasoned
+about. Both checks came back clean, and one of them talked me out of a change.
+
+| Query | Scale | Plan | Time |
+|---|---|---|---|
+| Personal food search | 60,300 rows, 300 per user | Bitmap index scan on `user_foods_unique_idx`, top-N heapsort | 1.16 ms |
+| Users due for a snapshot | 50,000 users, 49,045 with recent snapshots | Merge anti join, index-only both sides | 9.7 ms |
+
+The food search orders by `times_logged` with no index on it, which looks like a
+missing index until you read the query: the filter is `ILIKE '%term%'`, a leading
+wildcard no B-tree can serve, so the rows must be fetched and filtered before
+anything is sorted. The composite unique index already covers the user filter
+through its leading column. An index on `times_logged` would not have been used
+and would have cost write throughput on a table written to on every correction.
+
+Earlier in the same family: session lookup is an index scan at 0.2 ms over 5,000
+sessions, and no endpoint issues N+1 queries — counts are flat, three to five per
+request including authentication.
+
 ### Security properties, demonstrated by test
 
 Each of these is asserted by a test that fails if the property breaks:
@@ -322,6 +343,7 @@ piece did its own job properly. They are only visible from outside.
 | What the service worker caches, on a shared device | a day of health records survived sign-out |
 | What else survives sign-out on a shared device | queued meals flushed into the next person's account |
 | State captured once that should be read each time | the timezone offset, stale after travel |
+| Query plans vs the indexes declared, at scale | clean; measured, and one tempting index rejected |
 | Events and timers with no counterpart | nothing; all clean |
 
 Guards were left behind for five of the six, each verified by mutation rather
