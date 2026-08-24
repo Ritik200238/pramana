@@ -37,6 +37,7 @@ export function You({ onSignedOut }: YouProps) {
   const [showReceipts, setShowReceipts] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
   const [note, setNote] = useState<string | null>(null)
+  const [weight, setWeight] = useState('')
 
   useEffect(() => {
     api.me().then(setMe).catch(() => undefined)
@@ -72,6 +73,35 @@ export function You({ onSignedOut }: YouProps) {
       setBusy(null)
     }
   }, [])
+
+  /*
+   * Weight is what keeps the targets honest.
+   *
+   * Targets are recomputed from the most recent weight, so with no way to log
+   * one after onboarding they were frozen at whatever somebody typed on their
+   * first day — and a coach working from a months-old number gives advice that
+   * quietly stops applying.
+   */
+  const saveWeight = useCallback(async () => {
+    const value = Number(weight)
+    if (!Number.isFinite(value) || value < 20 || value > 400) {
+      setNote('That does not look like a weight in kilograms.')
+      return
+    }
+
+    setBusy('weight')
+    try {
+      await api.logWeight(value)
+      setWeight('')
+      // No congratulation and no comparison to last time. A number going the
+      // wrong way is not an occasion for the app to have an opinion.
+      setNote('Logged.')
+    } catch {
+      setNote('Could not save that just now.')
+    } finally {
+      setBusy(null)
+    }
+  }, [weight])
 
   const signOut = useCallback(async () => {
     setBusy('signout')
@@ -175,6 +205,33 @@ export function You({ onSignedOut }: YouProps) {
         >
           Ask me less
         </button>
+      </section>
+
+      {/* --------------------------------------------------------- weight */}
+      <section className="panel">
+        <h2>Weight</h2>
+        <p className="muted">Your targets are recalculated from the most recent one.</p>
+
+        <form
+          className="ask-form"
+          onSubmit={(event) => {
+            event.preventDefault()
+            void saveWeight()
+          }}
+        >
+          <input
+            type="text"
+            value={weight}
+            onChange={(event) => setWeight(event.target.value.replace(/[^\d.]/g, ''))}
+            placeholder="kg"
+            inputMode="decimal"
+            aria-label="Weight in kilograms"
+            enterKeyHint="done"
+          />
+          <button type="submit" className="primary" disabled={!weight || busy === 'weight'}>
+            {busy === 'weight' ? '…' : 'Log'}
+          </button>
+        </form>
       </section>
 
       {/* --------------------------------------------------------- export */}
