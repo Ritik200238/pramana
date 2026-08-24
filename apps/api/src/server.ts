@@ -7,6 +7,7 @@
  * an unattested model while appearing healthy.
  */
 
+import { timingSafeEqual } from 'node:crypto'
 import Fastify from 'fastify'
 import cors from '@fastify/cors'
 import rateLimit from '@fastify/rate-limit'
@@ -42,6 +43,17 @@ const PUBLIC_ROUTES = [
   'POST /auth/signout',
 ] as const
 
+/**
+ * Exempt from the session hook, but emphatically not unauthenticated.
+ *
+ * An operator is not a user and has no session to present, so these carry their
+ * own stronger check: a shared secret compared in constant time. They are kept
+ * in a separate list so PUBLIC_ROUTES can still be read as "anyone may call
+ * this" — collapsing the two would make the more dangerous list look like the
+ * safer one.
+ */
+const OPERATOR_ROUTES = ['POST /admin/run-snapshots'] as const
+
 export async function buildServer() {
   const config = loadConfig()
 
@@ -66,7 +78,10 @@ export async function buildServer() {
 
   // Registered before any route: identity is resolved from a session on every
   // request, and is never read from a body, query, or path.
-  await app.register(authPlugin, { db, publicRoutes: [...PUBLIC_ROUTES] })
+  await app.register(authPlugin, {
+    db,
+    publicRoutes: [...PUBLIC_ROUTES, ...OPERATOR_ROUTES],
+  })
   const openai = createClient({ apiKey: config.OG_ROUTER_API_KEY })
   const storage = new OGStorage({
     network: NETWORKS[config.OG_NETWORK],
@@ -138,12 +153,42 @@ export async function buildServer() {
     await close()
   })
 
-  // Lets a deploy or an operator force a pass without waiting for the timer.
-  app.post('/admin/run-snapshots', async (request, reply) => {
-    const result = await scheduler.runOnce()
-    request.log.info(result, 'manual snapshot pass')
-    return reply.status(200).send(result)
-  })
+  /**
+   * Lets a deploy or an operator force a snapshot pass without waiting for the
+   * timer.
+   *
+   * A session is not sufficient authorisation here and never was. This runs
+   * across every user in the batch, writing to 0G Storage and paying gas for
+   * each — so any signed-in account could turn one cheap request into unbounded
+   * spend on everyone else's behalf. It now needs an operator secret, compared
+   * in constant time, and is not mounted at all when none is configured.
+   */
+  if (config.ADMIN_TOKEN) {
+    const expected = Buffer.from(config.ADMIN_TOKEN)
+
+    app.post('/admin/run-snapshots', async (request, reply) => {
+      const presented = Buffer.from(
+        (request.headers['x-admin-token'] as string | undefined) ?? '',
+      )
+
+      // Length is checked first because timingSafeEqual throws on a mismatch,
+      // and the length of an operator secret is not a useful thing to leak.
+      const authorised =
+        presented.length === expected.length && timingSafeEqual(presented, expected)
+
+      if (!authorised) {
+        request.log.warn(
+          { ip: request.ip },
+          'rejected an unauthorised attempt to force a snapshot pass',
+        )
+        return reply.status(404).send({ error: 'not_found' })
+      }
+
+      const result = await scheduler.runOnce()
+      request.log.info(result, 'manual snapshot pass')
+      return reply.status(200).send(result)
+    })
+  }
 
   return { app, config }
 }

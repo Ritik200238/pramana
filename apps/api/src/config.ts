@@ -48,6 +48,17 @@ const schema = z.object({
 
   /** Hard ceiling on a single uploaded meal photo. */
   MAX_PHOTO_BYTES: z.coerce.number().int().positive().default(8 * 1024 * 1024),
+
+  /**
+   * Shared secret for operator-only endpoints.
+   *
+   * Minimum length is enforced because the failure mode of a short one is not a
+   * degraded feature — it is an unprivileged caller triggering work across
+   * every user's account. Absent means the admin surface is not mounted at all,
+   * which is the correct default: an endpoint that does not exist cannot be
+   * misconfigured.
+   */
+  ADMIN_TOKEN: z.string().min(32).optional(),
 })
 
 export type Config = Readonly<
