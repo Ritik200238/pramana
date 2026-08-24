@@ -57,3 +57,15 @@ export {
   type SnapshotResult,
   type StorageConfig,
 } from './storage.ts'
+
+export {
+  ANCHOR_ABI,
+  AnchorClient,
+  deriveOwnerAccount,
+  signAnchor,
+  SIGNATURE_TTL_SECONDS,
+  type AnchorClientConfig,
+  type AnchorRequest,
+  type AnchorResult,
+  type SignedAnchor,
+} from './anchor.ts'
