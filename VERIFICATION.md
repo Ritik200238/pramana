@@ -19,8 +19,8 @@ Last updated: 2026-08-24.
 |---|---|---|
 | `@ogt/core` — targets, safety, questions | 45 | `npm test -w @ogt/core` |
 | `@ogt/og` — router, storage, payments | 38 | `npm test -w @ogt/og` |
-| `@ogt/api` — services, routes, wiring | 108 | `npm test -w @ogt/api` |
-| `@ogt/api` — end-to-end and idempotency | 20 | included above |
+| `@ogt/api` — services, routes, wiring | 110 | `npm test -w @ogt/api` |
+| `@ogt/api` — end-to-end, idempotency, delivery | 30 | included above |
 | `@ogt/web` — client and offline queue | 16 | `npm test -w @ogt/web` |
 | `contracts` — Foundry | 80 | `forge test` in `packages/contracts` |
 
@@ -149,13 +149,26 @@ upload path in particular has never moved real bytes.
 
 ### SMS delivery
 
-**Status: no provider configured.** Sign-in is verified end-to-end, but the code
-is returned in the API response under `NODE_ENV=development` rather than sent.
-The production path — where that field is withheld — has never delivered a
-message.
+**Status: the path exists and is tested; no vendor account is connected.**
 
-**To close it:** an SMS provider and a delivery implementation behind the
-existing interface.
+The delivery port, the HTTP adapter, the boot refusal and the failure handling
+are all implemented and covered by sixteen tests, including an end-to-end case
+asserting the code is handed to a sender and that the code delivered is the one
+that verifies. What has not happened is a real message to a real handset.
+
+The vendor is configuration rather than code, because India requires DLT
+registration with an approved sender id and approved templates before a
+transactional SMS delivers at all — work the operator must do regardless of
+what this repository says.
+
+**To close it:** a provider account, a DLT-approved template, and
+
+```
+SMS_PROVIDER_URL / SMS_PROVIDER_HEADERS / SMS_PROVIDER_BODY
+```
+
+Production refuses to boot without them, so this cannot be forgotten into a
+deployment.
 
 ### Real users
 
@@ -176,12 +189,41 @@ drawn from research, not an observation.
 
 ---
 
+## Checking a deployment
+
+`npm run preflight -w @ogt/api` answers one question against live systems: would
+this deployment work right now? It checks the database and its migrations, the
+SMS sender, the Router catalogue and a real attested inference call, the chain
+id, the storage signer's balance, whether the anchor address holds code, and the
+indexer. A required failure exits non-zero, so it can gate a deploy.
+
+Run against this machine with placeholder credentials it reports, correctly:
+
+```
+  ok    config                  NODE_ENV=development, network=testnet
+  FAIL  database                (none running here)
+  warn  sms delivery            console sender — nobody can sign in in production
+  ok    0G Router catalogue     29 models, every routed model TEE-attested
+  FAIL  0G Router inference     key rejected — create an sk- inference key at pc.0g.ai
+  ok    0G Chain RPC            chain 16602 at block 51180554
+  FAIL  storage signer balance  holds nothing — storage writes will fail
+  warn  HealthRecordAnchor      OG_ANCHOR_ADDRESS unset
+  ok    0G Storage indexer      reachable
+```
+
+That is the honest state of this repository: the code paths are built and
+tested, and the credentials are not yet supplied. Every FAIL above names what
+supplies it.
+
+---
+
 ## Reproducing all of it
 
 ```bash
 npm install
-npm test --workspaces                      # 227 tests, no network required
+npm test --workspaces                      # 239 tests, no network required
 npm run test:live -w @ogt/og               # 6 live checks; 4 more with a key
 cd packages/contracts && forge test        # 80 tests
 bash script/verify-fork.sh                 # deploy + exercise on forked Galileo
+npm run preflight -w @ogt/api              # check a deployment against live systems
 ```
