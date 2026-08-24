@@ -5,7 +5,7 @@
  *   - `new Indexer(indexerUrl)`
  *   - `new MemData(bytes)` for in-memory payloads (we never touch the filesystem)
  *   - `indexer.upload(file, rpcUrl, signer, { encryption }) -> [tx, err]`
- *   - `indexer.downloadToBlob(rootHash, { decryption }) -> [blob, err]`
+ *   - `indexer.downloadToBlob(rootHash, { proof, decryption }) -> [blob, err]`
  *   - `EncryptionOption = { type:'aes256', key } | { type:'ecies', recipientPubKey }`
  *
  * Two design rules that are not negotiable:
@@ -145,11 +145,31 @@ export class OGStorage {
       throw new Error('At least one root hash is required to retrieve a snapshot.')
     }
 
+    /*
+     * `proof: true` is not optional for this payload, whatever the SDK default.
+     *
+     * It turns on Merkle proof verification, and the documentation names the
+     * case directly: "Enable proof verification for sensitive files." A health
+     * record is the most sensitive file this product has.
+     *
+     * The reason it matters more than it looks: the payload is encrypted in
+     * counter mode, which is malleable. A storage node returning altered
+     * ciphertext does not produce a decryption error — it produces altered
+     * plaintext. Flipped bits become flipped bits in somebody's medical
+     * history, and nothing downstream would notice, because there is no
+     * authentication tag to fail. The Merkle proof is the check that catches
+     * it.
+     *
+     * The extra work costs nothing that matters here: snapshots are restored
+     * rarely, and never on a path a user is waiting on.
+     */
+    const options = { proof: true, decryption: { privateKey } } as const
+
     // The overloads are distinct: one string, or an array of them.
     const [blob, err] =
       rootHashes.length === 1
-        ? await this.indexer.downloadToBlob(rootHashes[0]!, { decryption: { privateKey } })
-        : await this.indexer.downloadToBlob([...rootHashes], { decryption: { privateKey } })
+        ? await this.indexer.downloadToBlob(rootHashes[0]!, options)
+        : await this.indexer.downloadToBlob([...rootHashes], options)
 
     if (err !== null) {
       throw new Error(`0G Storage download failed: ${err.message}`)
