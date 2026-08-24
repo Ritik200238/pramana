@@ -18,7 +18,7 @@ Last updated: 2026-08-24.
 | Suite | Count | Command |
 |---|---|---|
 | `@ogt/core` — targets, safety, questions | 45 | `npm test -w @ogt/core` |
-| `@ogt/og` — router, storage, payments | 38 | `npm test -w @ogt/og` |
+| `@ogt/og` — router, storage, payments, encryption | 45 | `npm test -w @ogt/og` |
 | `@ogt/api` — services, routes, wiring | 166 | `npm test -w @ogt/api` |
 | `@ogt/api` — end-to-end, idempotency, delivery | 30 | included above |
 | `@ogt/web` — client, offline queue, reachability | 21 | `npm test -w @ogt/web` |
@@ -165,6 +165,27 @@ and no address exists on Galileo yet.
 **To close it:** a deployer key funded from the Galileo faucet, then
 `forge script script/Deploy.s.sol:Deploy --rpc-url og_testnet --broadcast`, and
 set `OG_ANCHOR_ADDRESS` plus `OG_ANCHOR_MASTER_SEED`.
+
+### Records encrypt and decrypt — proved, no credentials needed
+
+The failure this rules out is the quietest one available: a key of the wrong
+shape means every upload still succeeds while the ciphertext is permanently
+unreadable, and nobody learns it until somebody asks for their data back.
+
+The SDK exports the same ECIES primitives its upload path uses, so the round
+trip is proved with real cryptography in `packages/og/tests/encryption.test.ts`:
+
+- the derived key is a compressed secp256k1 point the SDK accepts unchanged
+  (reverting to an uncompressed key makes the suite fail, so the check is real)
+- a record decrypts byte for byte, including non-ASCII food names
+- one user's key cannot read another's
+- a rotated master seed cannot read what the original wrote
+- the header survives a round trip through bytes
+- every encryption uses a fresh ephemeral key
+- a fragmented payload decrypts correctly from a non-zero offset
+
+This does not prove a live indexer returns the bytes unchanged. It proves that
+when they come back, they decrypt.
 
 ### 0G Storage round trip
 
@@ -365,7 +386,7 @@ supplies it.
 
 ```bash
 npm install
-npm test --workspaces                      # 270 tests, no network required
+npm test --workspaces                      # 277 tests, no network required
 npm run test:live -w @ogt/og               # 6 live checks; 4 more with a key
 cd packages/contracts && forge test        # 108 tests
 bash script/verify-fork.sh                 # deploy + exercise on forked Galileo
