@@ -18,7 +18,7 @@ Last updated: 2026-08-24.
 | Suite | Count | Command |
 |---|---|---|
 | `@ogt/core` — targets, safety, questions | 45 | `npm test -w @ogt/core` |
-| `@ogt/og` — router, storage, encryption, speech, claims | 57 | `npm test -w @ogt/og` |
+| `@ogt/og` — router, storage, encryption, speech, claims, cost | 66 | `npm test -w @ogt/og` |
 | `@ogt/api` — services, routes, wiring | 166 | `npm test -w @ogt/api` |
 | `@ogt/api` — end-to-end, idempotency, delivery | 30 | included above |
 | `@ogt/web` — client, offline queue, reachability | 21 | `npm test -w @ogt/web` |
@@ -37,6 +37,7 @@ As of the last run, against 29 live models:
 
 - Every model in our chains exists on the Router.
 - Every model in every chain reports `tee_attested: true`.
+- Our published per-token prices match the catalogue exactly.
 - Our recorded attestation flags match what the Router reports.
 - Every model we send photographs to accepts image input.
 - `claude-*` and `gpt-*` still report no attestation, and remain absent from
@@ -267,6 +268,8 @@ piece did its own job properly. They are only visible from outside.
 | Error paths no test exercises | two untested refusals; no defect |
 | Request shapes vs the official API docs | voice notes ran with no TEE verification |
 | Product claims vs what the docs support | the privacy sentence overstated its evidence |
+| Published prices vs the live catalogue | three drifted; vision undercounted by 46% |
+| Reported values we receive and discard | the exact per-request charge was thrown away |
 | Events and timers with no counterpart | nothing; all clean |
 
 Guards were left behind for five of the six, each verified by mutation rather
@@ -399,7 +402,7 @@ supplies it.
 
 ```bash
 npm install
-npm test --workspaces                      # 289 tests, no network required
+npm test --workspaces                      # 298 tests, no network required
 npm run test:live -w @ogt/og               # 6 live checks; 4 more with a key
 cd packages/contracts && forge test        # 108 tests
 bash script/verify-fork.sh                 # deploy + exercise on forked Galileo
