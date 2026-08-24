@@ -37,6 +37,19 @@ export const OTP_MAX_ATTEMPTS = 5
 /** Per phone, per window. Stops someone using us as an SMS cannon. */
 export const OTP_MAX_PER_HOUR = 5
 export const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000
+/**
+ * How stale `lastSeenAt` may get before it is refreshed.
+ *
+ * This value is the difference between one write per request and one write per
+ * five minutes per session. It was the former: every authenticated request took
+ * a row lock on the same session row and produced a WAL record, so a phone
+ * polling for today's totals wrote to the database as often as it read from it.
+ *
+ * Five minutes because of what the field is for — the "active sessions" screen,
+ * where somebody checks whether a session they do not recognise is still being
+ * used. Nobody reading that screen can act on second-level precision.
+ */
+export const SESSION_TOUCH_INTERVAL_MS = 5 * 60 * 1000
 
 export class AuthError extends Error {
   readonly code: string
@@ -280,7 +293,7 @@ export async function resolveSession(
   if (!token) return null
 
   const [row] = await db
-    .select({ id: sessions.id, userId: sessions.userId })
+    .select({ id: sessions.id, userId: sessions.userId, lastSeenAt: sessions.lastSeenAt })
     .from(sessions)
     .where(
       and(
@@ -293,12 +306,16 @@ export async function resolveSession(
 
   if (!row) return null
 
-  // Best-effort liveness. A failure here must not sign someone out.
-  void db
-    .update(sessions)
-    .set({ lastSeenAt: now })
-    .where(eq(sessions.id, row.id))
-    .catch(() => undefined)
+  // Best-effort liveness, and only when it has gone stale. A failure here must
+  // never sign someone out, and neither must the cost of recording it.
+  const staleBy = now.getTime() - row.lastSeenAt.getTime()
+  if (staleBy >= SESSION_TOUCH_INTERVAL_MS) {
+    void db
+      .update(sessions)
+      .set({ lastSeenAt: now })
+      .where(eq(sessions.id, row.id))
+      .catch(() => undefined)
+  }
 
   return { id: row.userId, sessionId: row.id }
 }

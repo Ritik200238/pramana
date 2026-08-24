@@ -404,6 +404,55 @@ test('a profile that fails the safety gate is refused and stored nowhere', async
   })
 })
 
+test('a busy client does not write to the database on every request', async () => {
+  await withHarness(async (h) => {
+    const { token } = await signIn(h, '9700000003')
+
+    const seenAt = async () => {
+      const rows = await h.db.execute('select last_seen_at from sessions limit 1')
+      const list = (rows as unknown as { rows?: Array<{ last_seen_at: string }> }).rows ?? rows
+      return (list as Array<{ last_seen_at: string }>)[0]!.last_seen_at
+    }
+
+    const before = await seenAt()
+
+    // The PWA polls. Recording liveness on every one of these took a row lock
+    // and wrote a WAL record per request, so a phone reading today's totals
+    // wrote to the database as often as it read from it.
+    for (let i = 0; i < 8; i += 1) {
+      await h.app.inject({ method: 'GET', url: '/auth/me', headers: auth(token) })
+    }
+
+    assert.equal(await seenAt(), before, 'liveness must not be rewritten on every request')
+  })
+})
+
+test('liveness is still recorded once it has gone stale', async () => {
+  await withHarness(async (h) => {
+    const { token } = await signIn(h, '9700000004')
+
+    // Age the session past the touch interval rather than waiting for it.
+    await h.db.execute(
+      "update sessions set last_seen_at = now() - interval '10 minutes'",
+    )
+
+    await h.app.inject({ method: 'GET', url: '/auth/me', headers: auth(token) })
+    // The update is deliberately not awaited by the request, so give the
+    // best-effort write a turn of the loop to land.
+    await new Promise((resolve) => setImmediate(resolve))
+
+    const rows = await h.db.execute(
+      "select now() - last_seen_at < interval '1 minute' as fresh from sessions limit 1",
+    )
+    const list = (rows as unknown as { rows?: Array<{ fresh: boolean }> }).rows ?? rows
+    assert.equal(
+      (list as Array<{ fresh: boolean }>)[0]!.fresh,
+      true,
+      'the active-sessions screen still needs to show a recent time',
+    )
+  })
+})
+
 test('readiness reports the database it actually depends on', async () => {
   await withHarness(async (h) => {
     const response = await h.app.inject({ method: 'GET', url: '/ready' })
