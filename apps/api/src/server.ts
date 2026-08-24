@@ -10,13 +10,13 @@
 import { timingSafeEqual } from 'node:crypto'
 import Fastify from 'fastify'
 import cors from '@fastify/cors'
-import rateLimit from '@fastify/rate-limit'
 import multipart from '@fastify/multipart'
 import { z } from 'zod'
 import { sql } from 'drizzle-orm'
 import { assertAllChainsAreTeeAttested, createClient, NETWORKS, OGStorage } from '@ogt/og'
+import type OpenAI from 'openai'
 import { loadConfig } from './config.ts'
-import { createDb } from './db/index.ts'
+import { createDb, type Database } from './db/index.ts'
 import { registerMealRoutes } from './routes/meals.ts'
 import { registerChatRoutes } from './routes/chat.ts'
 import { registerUserRoutes } from './routes/users.ts'
@@ -25,6 +25,7 @@ import { registerDayRoutes } from './routes/day.ts'
 import { registerCoachRoutes } from './routes/coach.ts'
 import { startScheduler } from './jobs/scheduler.ts'
 import { authPlugin } from './plugins/auth.ts'
+import { ipLimitsPlugin, userLimitsPlugin } from './plugins/limits.ts'
 import { registerAuthRoutes } from './routes/auth.ts'
 
 /**
@@ -54,7 +55,26 @@ const PUBLIC_ROUTES = [
  */
 const OPERATOR_ROUTES = ['POST /admin/run-snapshots'] as const
 
-export async function buildServer() {
+/**
+ * Dependencies a test may supply instead of the real thing.
+ *
+ * Production passes nothing and every field is constructed normally. This
+ * exists so an end-to-end test can drive the real Fastify stack, the real auth
+ * plugin and a real Postgres, without reaching a paid model or a live chain —
+ * and so that the thing under test is the actual server rather than a
+ * rehearsal of it assembled by the test.
+ */
+export interface ServerOverrides {
+  db?: Database
+  openai?: OpenAI
+  storage?: OGStorage
+  /** Background snapshotting. Off in tests so a timer cannot outlive a case. */
+  backgroundJobs?: boolean
+  /** Silences the logger so a test run's output is its assertions. */
+  quiet?: boolean
+}
+
+export async function buildServer(overrides: ServerOverrides = {}) {
   const config = loadConfig()
 
   // Fail at boot, not on the first photo.
@@ -62,7 +82,11 @@ export async function buildServer() {
 
   const app = Fastify({
     logger: {
-      level: config.NODE_ENV === 'production' ? 'info' : 'debug',
+      level: overrides.quiet
+        ? 'silent'
+        : config.NODE_ENV === 'production'
+          ? 'info'
+          : 'debug',
       // Never log request bodies. They contain what people say about their
       // health, and a log file is the easiest place for that to leak.
       redact: ['req.headers.authorization', 'req.body', 'res.body'],
@@ -71,10 +95,17 @@ export async function buildServer() {
   })
 
   await app.register(cors, { origin: [...config.corsOrigins], credentials: true })
-  await app.register(rateLimit, { max: 120, timeWindow: '1 minute' })
   await app.register(multipart, { limits: { fileSize: config.MAX_PHOTO_BYTES } })
 
-  const { db, close } = createDb(config.DATABASE_URL)
+  // Before auth on purpose: a flood must be turned away without first costing
+  // us a session lookup per request.
+  await app.register(ipLimitsPlugin)
+
+  // An injected database is owned by whoever injected it, so closing it here
+  // would tear down a fixture still in use by the next assertion.
+  const owned = overrides.db ? null : createDb(config.DATABASE_URL)
+  const db = overrides.db ?? owned!.db
+  const close = owned ? owned.close : async () => {}
 
   // Registered before any route: identity is resolved from a session on every
   // request, and is never read from a body, query, or path.
@@ -82,12 +113,19 @@ export async function buildServer() {
     db,
     publicRoutes: [...PUBLIC_ROUTES, ...OPERATOR_ROUTES],
   })
-  const openai = createClient({ apiKey: config.OG_ROUTER_API_KEY })
-  const storage = new OGStorage({
-    network: NETWORKS[config.OG_NETWORK],
-    signerPrivateKey: config.OG_STORAGE_PRIVATE_KEY,
-    ...(config.OG_RPC_URL_OVERRIDE ? { rpcUrlOverride: config.OG_RPC_URL_OVERRIDE } : {}),
+
+  // After auth, because this layer keys on the session that hook resolved.
+  await app.register(userLimitsPlugin, {
+    isProduction: config.NODE_ENV === 'production',
   })
+  const openai = overrides.openai ?? createClient({ apiKey: config.OG_ROUTER_API_KEY })
+  const storage =
+    overrides.storage ??
+    new OGStorage({
+      network: NETWORKS[config.OG_NETWORK],
+      signerPrivateKey: config.OG_STORAGE_PRIVATE_KEY,
+      ...(config.OG_RPC_URL_OVERRIDE ? { rpcUrlOverride: config.OG_RPC_URL_OVERRIDE } : {}),
+    })
 
   // Liveness: is the process up. Cheap, and must never touch a dependency —
   // an orchestrator restarting us because Postgres blinked makes an outage worse.
@@ -171,6 +209,7 @@ export async function buildServer() {
   // 0G Storage snapshots. Without this the encrypted user-owned record is a
   // claim rather than a mechanism — the code existed but nothing ran it.
   const scheduler = startScheduler({ db, storage, logger: app.log })
+  if (overrides.backgroundJobs === false) scheduler.stop()
 
   app.addHook('onClose', async () => {
     scheduler.stop()
