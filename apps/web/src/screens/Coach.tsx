@@ -18,23 +18,19 @@ import { Blocked } from '../components/Blocked.tsx'
 
 type Panel = 'eat' | 'today' | 'week' | 'ask'
 
-export interface CoachProps {
-  userId: string
-}
-
-export function Coach({ userId }: CoachProps) {
+export function Coach() {
   const [panel, setPanel] = useState<Panel>('eat')
   const [streak, setStreak] = useState<StreakState | null>(null)
   const [blocked, setBlocked] = useState<{ message: string; helpline?: { label: string; number: string } } | null>(null)
 
   useEffect(() => {
     api
-      .streak(userId)
+      .streak()
       .then(setStreak)
       .catch(() => {
         // A missing streak is not worth an error state.
       })
-  }, [userId])
+  }, [])
 
   if (blocked) {
     return (
@@ -81,10 +77,10 @@ export function Coach({ userId }: CoachProps) {
         ))}
       </nav>
 
-      {panel === 'eat' && <EatNow userId={userId} onBlocked={setBlocked} />}
-      {panel === 'today' && <DayLine userId={userId} />}
-      {panel === 'week' && <WeekReview userId={userId} />}
-      {panel === 'ask' && <AskData userId={userId} onBlocked={setBlocked} />}
+      {panel === 'eat' && <EatNow onBlocked={setBlocked} />}
+      {panel === 'today' && <DayLine />}
+      {panel === 'week' && <WeekReview />}
+      {panel === 'ask' && <AskData onBlocked={setBlocked} />}
     </section>
   )
 }
@@ -95,7 +91,7 @@ interface BlockHandler {
   onBlocked: (value: { message: string; helpline?: { label: string; number: string } }) => void
 }
 
-function EatNow({ userId, onBlocked }: { userId: string } & BlockHandler) {
+function EatNow({ onBlocked }: BlockHandler) {
   const [available, setAvailable] = useState('')
   const [answer, setAnswer] = useState<string | null>(null)
   const [proteinLeft, setProteinLeft] = useState<number | null>(null)
@@ -106,7 +102,7 @@ function EatNow({ userId, onBlocked }: { userId: string } & BlockHandler) {
     setBusy(true)
     setError(null)
     try {
-      const result = await api.suggest(userId, available.trim() || undefined)
+      const result = await api.suggest(available.trim() || undefined)
       if (isBlocked(result)) {
         onBlocked({ message: result.message, ...(result.helpline ? { helpline: result.helpline } : {}) })
         return
@@ -118,7 +114,7 @@ function EatNow({ userId, onBlocked }: { userId: string } & BlockHandler) {
     } finally {
       setBusy(false)
     }
-  }, [userId, available, onBlocked])
+  }, [available, onBlocked])
 
   return (
     <div className="panel">
@@ -149,18 +145,18 @@ function EatNow({ userId, onBlocked }: { userId: string } & BlockHandler) {
 
 // ---------------------------------------------------------------- day line
 
-function DayLine({ userId }: { userId: string }) {
+function DayLine() {
   const [line, setLine] = useState<string | null>(null)
   const [busy, setBusy] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     api
-      .dayLine(userId)
+      .dayLine()
       .then((result) => setLine(result.line))
       .catch(() => setError('Could not load today.'))
       .finally(() => setBusy(false))
-  }, [userId])
+  }, [])
 
   return (
     <div className="panel">
@@ -174,21 +170,21 @@ function DayLine({ userId }: { userId: string }) {
 
 // ------------------------------------------------------------ week review
 
-function WeekReview({ userId }: { userId: string }) {
+function WeekReview() {
   const [review, setReview] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const [busy, setBusy] = useState(true)
 
   useEffect(() => {
     api
-      .weekly(userId)
+      .weekly()
       .then((result) => {
         setReview(result.review)
         setMessage(result.message ?? null)
       })
       .catch(() => setMessage('Could not load this week.'))
       .finally(() => setBusy(false))
-  }, [userId])
+  }, [])
 
   return (
     <div className="panel">
@@ -204,7 +200,7 @@ function WeekReview({ userId }: { userId: string }) {
 
 // -------------------------------------------------------------- ask my data
 
-function AskData({ userId, onBlocked }: { userId: string } & BlockHandler) {
+function AskData({ onBlocked }: BlockHandler) {
   const [question, setQuestion] = useState('')
   const [answer, setAnswer] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
@@ -218,7 +214,7 @@ function AskData({ userId, onBlocked }: { userId: string } & BlockHandler) {
     setAnswer(null)
     setNotice(null)
     try {
-      const result = await api.ask(userId, text)
+      const result = await api.ask(text)
       if (isBlocked(result)) {
         onBlocked({ message: result.message, ...(result.helpline ? { helpline: result.helpline } : {}) })
         return
@@ -230,7 +226,7 @@ function AskData({ userId, onBlocked }: { userId: string } & BlockHandler) {
     } finally {
       setBusy(false)
     }
-  }, [userId, question, onBlocked])
+  }, [question, onBlocked])
 
   return (
     <div className="panel">

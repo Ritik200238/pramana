@@ -23,11 +23,7 @@ interface Turn {
   proactive?: boolean
 }
 
-export interface ChatProps {
-  userId: string
-}
-
-export function Chat({ userId }: ChatProps) {
+export function Chat() {
   const [turns, setTurns] = useState<Turn[]>([])
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
@@ -36,7 +32,7 @@ export function Chat({ userId }: ChatProps) {
 
   useEffect(() => {
     api
-      .history(userId)
+      .history()
       .then((data) => {
         setTurns(
           data.messages.map((message) => ({
@@ -48,7 +44,7 @@ export function Chat({ userId }: ChatProps) {
       .catch(() => {
         // Offline. An empty thread is better than an error screen.
       })
-  }, [userId])
+  }, [])
 
   // A proactive message the user has not seen yet.
   //
@@ -57,7 +53,7 @@ export function Chat({ userId }: ChatProps) {
   // making a follow-up look like it was ignored.
   useEffect(() => {
     api
-      .proactive(userId)
+      .proactive()
       .then((result) => {
         if (!result.message) return
         setTurns((current) => {
@@ -70,7 +66,7 @@ export function Chat({ userId }: ChatProps) {
       .catch(() => {
         // An unasked question costs nothing. Never surface a failure here.
       })
-  }, [userId])
+  }, [])
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -85,7 +81,7 @@ export function Chat({ userId }: ChatProps) {
     setTurns((current) => [...current, { role: 'user', content: message }])
 
     try {
-      const response = await api.chat(userId, message)
+      const response = await api.chat(message)
 
       if (isBlocked(response)) {
         setBlocked({ message: response.message, ...(response.helpline ? { helpline: response.helpline } : {}) })
@@ -113,7 +109,7 @@ export function Chat({ userId }: ChatProps) {
     } finally {
       setSending(false)
     }
-  }, [draft, sending, userId])
+  }, [draft, sending])
 
   if (blocked) {
     return <Blocked message={blocked.message} helpline={blocked.helpline} onClose={() => setBlocked(null)} />

@@ -36,12 +36,11 @@ type Stage =
   | { name: 'error'; message: string }
 
 export interface MealFlowProps {
-  userId: string
   onClose: () => void
   onLogged: () => void
 }
 
-export function MealFlow({ userId, onClose, onLogged }: MealFlowProps) {
+export function MealFlow({ onClose, onLogged }: MealFlowProps) {
   const [stage, setStage] = useState<Stage>({ name: 'capture' })
   const [text, setText] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
@@ -49,7 +48,6 @@ export function MealFlow({ userId, onClose, onLogged }: MealFlowProps) {
   const commit = useCallback(
     async (draft: DraftResponse, answers: Answer[], source: 'photo' | 'text' = 'photo') => {
       const body = {
-        userId,
         vision: draft.vision,
         answers,
         // Recorded accurately: a text log counted as a photo log would corrupt
@@ -79,7 +77,7 @@ export function MealFlow({ userId, onClose, onLogged }: MealFlowProps) {
         })
       }
     },
-    [userId],
+    [],
   )
 
   const onFile = useCallback(
@@ -87,7 +85,7 @@ export function MealFlow({ userId, onClose, onLogged }: MealFlowProps) {
       setStage({ name: 'reading' })
       try {
         const dataUrl = await toDataUrl(file)
-        const result = await api.draftMeal(userId, dataUrl)
+        const result = await api.draftMeal(dataUrl)
 
         if (isBlocked(result)) {
           setStage({ name: 'blocked', message: result.message, ...(result.helpline ? { helpline: result.helpline } : {}) })
@@ -113,14 +111,14 @@ export function MealFlow({ userId, onClose, onLogged }: MealFlowProps) {
         })
       }
     },
-    [userId, commit],
+    [commit],
   )
 
   const onText = useCallback(
     async (description: string) => {
       setStage({ name: 'reading' })
       try {
-        const result = await api.draftMealText(userId, description)
+        const result = await api.draftMealText(description)
 
         if (isBlocked(result)) {
           setStage({
@@ -146,7 +144,7 @@ export function MealFlow({ userId, onClose, onLogged }: MealFlowProps) {
         })
       }
     },
-    [userId, commit],
+    [commit],
   )
 
   const answer = useCallback(

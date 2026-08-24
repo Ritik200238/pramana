@@ -17,7 +17,11 @@ import { api, isBlocked, type Targets } from '../lib/api.ts'
 import { Blocked } from '../components/Blocked.tsx'
 
 export interface OnboardingProps {
-  onDone: (userId: string, targets: Targets) => void
+  /**
+   * Identity is not passed here. It came from sign-in and lives in the session,
+   * so onboarding only reports the numbers it produced.
+   */
+  onDone: (targets: Targets) => void
 }
 
 type Goal = 'lose' | 'gain' | 'maintain' | 'recomp'
@@ -43,7 +47,7 @@ export function Onboarding({ onDone }: OnboardingProps) {
     setBusy(true)
     setError(null)
     try {
-      const result = await api.createUser({
+      const result = await api.createProfile({
         sex,
         ageYears,
         heightCm,
@@ -59,7 +63,7 @@ export function Onboarding({ onDone }: OnboardingProps) {
         return
       }
 
-      onDone(result.userId, result.targets)
+      onDone(result.targets)
     } catch {
       setError('Could not save that. Check your connection and try again.')
     } finally {

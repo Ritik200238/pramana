@@ -17,12 +17,11 @@ import { api, type DaySummary, type ProactiveMessage, type Usual } from '../lib/
 import { ConfidenceBadge } from '../components/ConfidenceBadge.tsx'
 
 export interface TodayProps {
-  userId: string
   onCapture: () => void
   onOpenChat: () => void
 }
 
-export function Today({ userId, onCapture, onOpenChat }: TodayProps) {
+export function Today({ onCapture, onOpenChat }: TodayProps) {
   const [day, setDay] = useState<DaySummary | null>(null)
   const [usuals, setUsuals] = useState<Usual[]>([])
   const [nudge, setNudge] = useState<ProactiveMessage | null>(null)
@@ -31,7 +30,7 @@ export function Today({ userId, onCapture, onOpenChat }: TodayProps) {
 
   const load = useCallback(async () => {
     try {
-      const [summary, usualsResult] = await Promise.all([api.today(userId), api.usuals(userId)])
+      const [summary, usualsResult] = await Promise.all([api.today(), api.usuals()])
       setDay(summary)
       setUsuals(usualsResult.usuals)
       setOffline(false)
@@ -39,7 +38,7 @@ export function Today({ userId, onCapture, onOpenChat }: TodayProps) {
       // Offline is not an error state. We show what we have and say so quietly.
       setOffline(true)
     }
-  }, [userId])
+  }, [])
 
   useEffect(() => {
     void load()
@@ -48,18 +47,18 @@ export function Today({ userId, onCapture, onOpenChat }: TodayProps) {
   useEffect(() => {
     // Silence is this feature's normal state — it returns null almost always.
     api
-      .proactive(userId)
+      .proactive()
       .then((result) => setNudge(result.message))
       .catch(() => {
         // Never surface a failure here. An unasked question costs nothing.
       })
-  }, [userId])
+  }, [])
 
   const repeat = useCallback(
     async (usual: Usual) => {
       setRepeating(usual.sourceMealId)
       try {
-        await api.repeatMeal(userId, usual.sourceMealId)
+        await api.repeatMeal(usual.sourceMealId)
         await load()
       } catch {
         setOffline(true)
@@ -67,7 +66,7 @@ export function Today({ userId, onCapture, onOpenChat }: TodayProps) {
         setRepeating(null)
       }
     },
-    [userId, load],
+    [load],
   )
 
   const targets = day?.targets
