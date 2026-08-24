@@ -121,7 +121,7 @@ test('the proxied models remain excluded from every chain', async () => {
   )
   assert.ok(proxied.length > 0, 'expected the catalogue to still carry proxied models')
 
-  const chained = new Set(Object.values(CHAINS).flatMap((chain) => chain.map((m) => m.id)))
+  const chained = new Set<string>(Object.values(CHAINS).flatMap((chain) => chain.map((m) => m.id)))
   for (const entry of proxied) {
     assert.equal(chained.has(entry.id), false, `${entry.id} is unattested and must not be routed to`)
   }
