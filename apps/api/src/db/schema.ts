@@ -215,7 +215,14 @@ export const users = pgTable(
     diet: dietEnum('diet').default('veg'),
     cooks: cooksEnum('cooks').default('self'),
 
-    /** Learned from when they actually log; drives notification timing. */
+    /**
+     * Intended to learn when somebody actually eats, to time notifications.
+     *
+     * NOT YET WRITTEN. Nothing populates or reads this, so it is null for every
+     * user. Said plainly because the previous comment described a feature that
+     * does not exist, and a schema that describes intentions rather than
+     * behaviour is how several defects here stayed invisible.
+     */
     mealTimes: jsonb('meal_times').$type<{ breakfast?: string; lunch?: string; dinner?: string }>(),
 
     /** Gentle / straight / blunt. Never sycophantic at any setting. */
@@ -223,13 +230,30 @@ export const users = pgTable(
 
     /**
      * Compressed secp256k1 public key the record is ECIES-encrypted to.
-     * We never hold the matching private key.
+     *
+     * We DO hold the matching private key today: it is derived from the anchor
+     * master seed, which makes this custodial. The previous comment here said
+     * the opposite, and a false claim in the schema is worse than none — this
+     * is the line somebody would cite when deciding what the product may
+     * promise. See packages/og/src/anchor.ts and the custody note in
+     * VERIFICATION.md.
      */
     recordPubKey: text('record_pub_key'),
-    /** Address that anchors this user's snapshots on 0G Chain. */
+    /**
+     * The on-chain account that owns this user's snapshots.
+     *
+     * Recomputable from the seed, and stored anyway: it is the witness that
+     * makes a changed seed detectable. Without it, a rotated or mistyped secret
+     * would silently move every derivation and quietly orphan the record.
+     */
     anchorAddress: text('anchor_address'),
 
-    /** Set when the safety gate has permanently blocked this profile. */
+    /**
+     * Intended to record a permanent safety-gate block.
+     *
+     * NOT YET WRITTEN. The gate refuses at request time and persists nothing,
+     * so this is null for every user.
+     */
     blockedReason: text('blocked_reason'),
 
     proactiveOptOut: boolean('proactive_opt_out').notNull().default(false),
@@ -402,6 +426,15 @@ export const mealItems = pgTable(
     mealId: uuid('meal_id')
       .notNull()
       .references(() => meals.id, { onDelete: 'cascade' }),
+    /*
+     * Provenance for this line: which food record produced its numbers.
+     *
+     * NOT YET WRITTEN. The draft pipeline resolves nutrition inline and never
+     * carries a food id, so both are null for every item. Corrections work
+     * regardless, by matching on the normalised name — which is why this went
+     * unnoticed. Populating them would make a number auditable back to its
+     * source; until that happens, saying so here is better than implying it.
+     */
     userFoodId: uuid('user_food_id').references(() => userFoods.id),
     globalFoodId: uuid('global_food_id').references(() => globalFoods.id),
 
