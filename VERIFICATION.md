@@ -19,7 +19,7 @@ Last updated: 2026-08-24.
 |---|---|---|
 | `@ogt/core` — targets, safety, questions | 45 | `npm test -w @ogt/core` |
 | `@ogt/og` — router, storage, encryption, speech, claims, cost | 78 | `npm test -w @ogt/og` |
-| `@ogt/api` — services, routes, wiring | 186 | `npm test -w @ogt/api` |
+| `@ogt/api` — services, routes, wiring | 194 | `npm test -w @ogt/api` |
 | `@ogt/api` — end-to-end, idempotency, delivery | 30 | included above |
 | `@ogt/web` — client, offline queue, reachability | 22 | `npm test -w @ogt/web` |
 | `contracts` — Foundry | 108 | `forge test` in `packages/contracts` |
@@ -114,6 +114,9 @@ Each of these is asserted by a test that fails if the property breaks:
 - Requesting codes for many different numbers from one host is capped.
 - The operator endpoint refuses a signed-in user without the operator secret.
 - A profile that fails the safety gate is refused and written nowhere.
+- A photo must be inline base64 in a camera format. A remote URL would be
+  fetched by a provider on our account, so links, non-images and SVG are all
+  refused.
 - A replayed write is applied once; a key reused for different content is
   refused; two concurrent replays cannot both run the write.
 - Every route whose handler calls a model appears in the per-user cost limits,
@@ -309,6 +312,7 @@ piece did its own job properly. They are only visible from outside.
 | .env.example vs the config it documents | three operational knobs undocumented |
 | A capability a comment claimed vs what a user could do | storage pointers nobody could decrypt |
 | Client response types vs what the API sends | clean; two shared shapes were copies and are now imported |
+| Unbounded inputs reaching a model or a provider | image routes accepted any URL, fetched on our account |
 | Events and timers with no counterpart | nothing; all clean |
 
 Guards were left behind for five of the six, each verified by mutation rather
@@ -476,7 +480,7 @@ supplies it.
 
 ```bash
 npm install
-npm test --workspaces                      # 331 tests, no network required
+npm test --workspaces                      # 339 tests, no network required
 npm run test:live -w @ogt/og               # 6 live checks; 4 more with a key
 cd packages/contracts && forge test        # 108 tests
 bash script/verify-fork.sh                 # deploy + exercise on forked Galileo
