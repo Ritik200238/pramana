@@ -16,7 +16,7 @@
  */
 
 import { ethers } from 'ethers'
-import { CHAINS, MODELS, NETWORKS, ROUTER_BASE_URL } from '@ogt/og'
+import { CHAINS, MODELS, NETWORKS, ROUTER_BASE_URL, readBalance } from '@ogt/og'
 import { loadConfig } from './config.ts'
 import { createDb } from './db/index.ts'
 import { createSmsSender } from './services/sms.ts'
@@ -189,6 +189,30 @@ async function main(): Promise<void> {
       state: 'ok',
       detail: `${body.model ?? 'model'} answered, TEE verified by ${trace.provider ?? 'provider'}`,
     }
+  })
+
+  await check('0G Router balance', false, async () => {
+    if (!config.OG_ROUTER_MANAGEMENT_KEY) {
+      return {
+        state: 'warn',
+        detail:
+          'OG_ROUTER_MANAGEMENT_KEY unset — the balance that keeps inference working cannot be read',
+      }
+    }
+
+    const balance = await readBalance(config.OG_ROUTER_MANAGEMENT_KEY)
+
+    /*
+     * Zero here is not a degraded state. When the Router balance and the
+     * Payment Layer are both empty, the next inference request returns 402 and
+     * every model call in the product fails — photos, chat, coaching, all of
+     * it. There is no partial mode.
+     */
+    if (balance.totalNeuron === 0n) {
+      return { state: 'fail', detail: 'balance is zero — every inference will return 402' }
+    }
+
+    return { state: 'ok', detail: `${balance.og} 0G available` }
   })
 
   // --------------------------------------------------------------- 0G Chain

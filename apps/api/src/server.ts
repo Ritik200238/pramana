@@ -34,6 +34,7 @@ import { registerCoachRoutes } from './routes/coach.ts'
 import { startScheduler } from './jobs/scheduler.ts'
 import { startAnchorWorker } from './jobs/anchor.ts'
 import { startCoachWorker } from './jobs/coach-brain.ts'
+import { startBalanceWatch } from './jobs/balance.ts'
 import { authPlugin } from './plugins/auth.ts'
 import { idempotencyPlugin } from './plugins/idempotency.ts'
 import { ipLimitsPlugin, userLimitsPlugin } from './plugins/limits.ts'
@@ -314,6 +315,29 @@ export async function buildServer(overrides: ServerOverrides = {}) {
       : null
 
   if (overrides.backgroundJobs === false) coachWorker?.stop()
+
+  /*
+   * The balance that keeps everything working.
+   *
+   * Preflight checks it at deploy, but a balance drains while the server runs,
+   * so it is worth watching. Warns only — topping up has money attached and
+   * belongs to a person.
+   */
+  const balanceWatch = config.OG_ROUTER_MANAGEMENT_KEY
+    ? startBalanceWatch({
+        db,
+        managementKey: config.OG_ROUTER_MANAGEMENT_KEY,
+        logger: app.log,
+      })
+    : null
+
+  if (overrides.backgroundJobs === false) balanceWatch?.stop()
+  if (!balanceWatch) {
+    app.log.warn(
+      'No OG_ROUTER_MANAGEMENT_KEY: the balance cannot be read, so nothing will warn ' +
+        'before inference starts failing with 402.',
+    )
+  }
   if (!anchorWorker) {
     app.log.warn(
       'On-chain anchoring is off: set OG_ANCHOR_ADDRESS and OG_ANCHOR_MASTER_SEED. ' +
@@ -325,6 +349,7 @@ export async function buildServer(overrides: ServerOverrides = {}) {
     scheduler.stop()
     anchorWorker?.stop()
     coachWorker?.stop()
+    balanceWatch?.stop()
     await close()
   })
 

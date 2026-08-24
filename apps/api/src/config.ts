@@ -21,6 +21,23 @@ const schema = z.object({
     .string()
     .startsWith('sk-', 'Expected an inference key. Management keys (mk-) cannot call inference.'),
 
+  /**
+   * Management key for reading the Router account balance.
+   *
+   * A separate key by design: `/v1/account/*` requires `mk-` with the
+   * `account:read` scope, and an inference key is refused with 403. That
+   * separation is the Router's, and it is a good one — the key that spends
+   * money should not be the key that can read the books.
+   *
+   * Optional, and the cost of leaving it out is real. When the Router balance
+   * reaches zero every inference returns 402 and the product simply stops. This
+   * is the only way to see that coming.
+   */
+  OG_ROUTER_MANAGEMENT_KEY: z
+    .string()
+    .startsWith('mk-', 'Expected a management key. Inference keys ("sk-") cannot read the balance.')
+    .optional(),
+
   OG_NETWORK: z.enum(['testnet', 'mainnet']).default('testnet'),
 
   /**
