@@ -311,3 +311,52 @@ describe('response discrimination', () => {
     expect(api.isNotFood({ vision: {} })).toBe(false)
   })
 })
+
+// ------------------------------------------------------------- reachability
+
+describe('every built feature has a way in', () => {
+  /*
+   * The bug this guards is one the repository kept producing: something built,
+   * tested and shipped in the API that no screen ever calls. A sweep found
+   * twelve at once — including no way to sign out, no way to see the
+   * attestation receipts the privacy claim rests on, and no way to export the
+   * data we promise is yours.
+   *
+   * None of it failed a test, because everything each piece did in isolation
+   * was correct. Reachability is only visible from the outside.
+   */
+  test('the client methods that carry a promise are called by a screen', async () => {
+    const { readFileSync, readdirSync } = await import('node:fs')
+    const { join } = await import('node:path')
+
+    const roots = ['src/screens', 'src/components']
+    let ui = ''
+    for (const root of roots) {
+      for (const file of readdirSync(root)) {
+        if (file.endsWith('.tsx')) ui += readFileSync(join(root, file), 'utf8')
+      }
+    }
+
+    // Each of these is a sentence the product says out loud somewhere.
+    const promises = {
+      'signOut': 'somebody on a shared phone must be able to sign out',
+      'proof': 'the privacy claim must be checkable by the person it is made to',
+      'exportUrl': '"export everything, free, forever" needs a button',
+      'correctItem': 'corrections are the moat; without them nothing is learned',
+      'setTone': 'the bluntness of the coach is advertised as adjustable',
+      'askMeLess': 'one tap, obeyed permanently — it has to exist to be tapped',
+    }
+
+    const flat = ui.replace(/\s+/g, '')
+
+    const unreachable = Object.entries(promises)
+      // Prefixed with `api.` deliberately: matching the bare name passes on a
+      // local helper that merely shares it, which is how this test first passed
+      // while the feature it guards was gone. Whitespace is stripped first
+      // because a chained call spread over lines is still a call.
+      .filter(([method]) => !flat.includes(`api.${method}(`))
+      .map(([method, why]) => `${method}: ${why}`)
+
+    expect(unreachable).toEqual([])
+  })
+})

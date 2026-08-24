@@ -14,6 +14,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { api, type DaySummary, type ProactiveMessage, type Usual } from '../lib/api.ts'
+import { CorrectItem } from '../components/CorrectItem.tsx'
 import { ConfidenceBadge } from '../components/ConfidenceBadge.tsx'
 
 export interface TodayProps {
@@ -26,6 +27,7 @@ export function Today({ onCapture, onOpenChat }: TodayProps) {
   const [usuals, setUsuals] = useState<Usual[]>([])
   const [nudge, setNudge] = useState<ProactiveMessage | null>(null)
   const [repeating, setRepeating] = useState<string | null>(null)
+  const [correcting, setCorrecting] = useState<{ mealId: string; item: DaySummary['meals'][number]['items'][number] } | null>(null)
   const [offline, setOffline] = useState(false)
 
   const load = useCallback(async () => {
@@ -161,8 +163,27 @@ export function Today({ onCapture, onOpenChat }: TodayProps) {
           {day.meals.map((meal) => (
             <div key={meal.id} className="meal-row">
               <div className="meal-row-main">
+                {/*
+                  * Each item is tappable to correct it. This is the moat's only
+                  * entry point: a correction is what turns a global dish into
+                  * their version of it, and until now the endpoint existed with
+                  * nothing able to call it.
+                  */}
                 <span className="meal-row-name">
-                  {meal.items.map((item) => item.name).join(', ') || 'Meal'}
+                  {meal.items.length > 0
+                    ? meal.items.map((item, index) => (
+                        <span key={item.id}>
+                          {index > 0 && ', '}
+                          <button
+                            type="button"
+                            className="item-correct"
+                            onClick={() => setCorrecting({ mealId: meal.id, item })}
+                          >
+                            {item.name}
+                          </button>
+                        </span>
+                      ))
+                    : 'Meal'}
                 </span>
                 <span className="meal-row-time">
                   {new Date(meal.eatenAt).toLocaleTimeString([], {
@@ -201,6 +222,18 @@ export function Today({ onCapture, onOpenChat }: TodayProps) {
 
       {offline && (
         <p className="offline-note">Showing what I have — you look offline.</p>
+      )}
+
+      {correcting && (
+        <CorrectItem
+          mealId={correcting.mealId}
+          item={correcting.item}
+          onClose={() => setCorrecting(null)}
+          onSaved={() => {
+            setCorrecting(null)
+            void load()
+          }}
+        />
       )}
     </section>
   )
