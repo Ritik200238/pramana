@@ -538,6 +538,54 @@ test('expired codes and dead sessions are actually purged', async () => {
   })
 })
 
+test('a changed master seed is refused rather than silently orphaning records', async () => {
+  await withHarness(async (h) => {
+    const { token } = await signIn(h, '9700000008')
+    await h.app.inject({
+      method: 'POST',
+      url: '/users/me/profile',
+      headers: auth(token),
+      payload: VALID_PROFILE,
+    })
+
+    const me = await h.app.inject({ method: 'GET', url: '/auth/me', headers: auth(token) })
+    const userId = me.json().user.id
+
+    const { ensureRecordKey, SeedDriftError } = await import('../src/services/record-key.ts')
+
+    const original = 'a-master-seed-long-enough-to-be-accepted'
+    await ensureRecordKey(h.db, original, userId)
+
+    // Both the address and the key are recorded, so the derivation has a witness.
+    const rows = await h.db.execute(
+      `select record_pub_key, anchor_address from users where id = '${userId}'`,
+    )
+    const list =
+      (rows as unknown as { rows?: Array<{ record_pub_key: string; anchor_address: string }> })
+        .rows ?? rows
+    const stored = (list as Array<{ record_pub_key: string; anchor_address: string }>)[0]!
+    assert.match(stored.anchor_address, /^0x[0-9a-fA-F]{40}$/)
+    assert.ok(stored.record_pub_key)
+
+    /*
+     * A rotated, retyped, or wrongly restored seed moves every derivation. New
+     * records would be encrypted to a key the old ones were not, and anchored
+     * to an address owning none of their history — with nothing failing. The
+     * data would simply stop being theirs.
+     */
+    await assert.rejects(
+      () => ensureRecordKey(h.db, 'a-completely-different-seed-of-sufficient-length', userId),
+      (error: unknown) => {
+        assert.ok(error instanceof SeedDriftError)
+        return true
+      },
+    )
+
+    // And the original seed still works, unchanged.
+    assert.equal(await ensureRecordKey(h.db, original, userId), stored.record_pub_key)
+  })
+})
+
 test('readiness reports the database it actually depends on', async () => {
   await withHarness(async (h) => {
     const response = await h.app.inject({ method: 'GET', url: '/ready' })

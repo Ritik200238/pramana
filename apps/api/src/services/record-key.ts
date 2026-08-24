@@ -18,7 +18,7 @@
  */
 
 import { eq } from 'drizzle-orm'
-import { deriveRecordPublicKey } from '@ogt/og'
+import { deriveOwnerAccount, deriveRecordPublicKey } from '@ogt/og'
 import type { Database } from '../db/index.ts'
 import { users } from '../db/schema.ts'
 
@@ -29,26 +29,56 @@ import { users } from '../db/schema.ts'
  * recomputed from one backed-up secret. The same account owns the record on
  * chain — see `deriveRecordPublicKey` for why those are deliberately one key.
  */
+export class SeedDriftError extends Error {
+  constructor(userId: string, stored: string, derived: string) {
+    super(
+      `The anchor master seed no longer derives this user's account. Stored ${stored}, ` +
+        `derived ${derived} for user ${userId}. Refusing to write a record they could ` +
+        'not read. Restore the original seed, or migrate existing records deliberately.',
+    )
+    this.name = 'SeedDriftError'
+  }
+}
+
 export async function ensureRecordKey(
   db: Database,
   masterSeed: string,
   userId: string,
 ): Promise<string> {
   const [existing] = await db
-    .select({ recordPubKey: users.recordPubKey })
+    .select({ recordPubKey: users.recordPubKey, anchorAddress: users.anchorAddress })
     .from(users)
     .where(eq(users.id, userId))
     .limit(1)
 
-  if (existing?.recordPubKey) return existing.recordPubKey
+  const anchorAddress = deriveOwnerAccount(masterSeed, userId).address
 
-  const recordPubKey = deriveRecordPublicKey(masterSeed, userId)
+  /*
+   * A changed seed is caught here rather than discovered later.
+   *
+   * Everything about a user's record — the key it is encrypted to and the
+   * account that owns it on chain — is derived from one secret. If that secret
+   * is rotated, retyped with a typo, or restored from the wrong backup, every
+   * derivation silently moves: new records get encrypted to a key the user's
+   * old records were not, and anchored to an address that owns none of their
+   * history. Nothing would fail. The data would simply stop being theirs.
+   *
+   * The stored address is the witness that makes that detectable, which is the
+   * whole reason to keep a value we could otherwise recompute.
+   */
+  if (existing?.anchorAddress && existing.anchorAddress !== anchorAddress) {
+    throw new SeedDriftError(userId, existing.anchorAddress, anchorAddress)
+  }
 
-  // Stored rather than derived on every read so the export endpoint can show a
-  // person the key their record is addressed to without holding the seed.
+  if (existing?.recordPubKey && existing.anchorAddress) return existing.recordPubKey
+
+  const recordPubKey = existing?.recordPubKey ?? deriveRecordPublicKey(masterSeed, userId)
+
+  // Stored rather than derived on every read, so the export and proof surfaces
+  // can show a person their own key and address without holding the seed.
   await db
     .update(users)
-    .set({ recordPubKey, updatedAt: new Date() })
+    .set({ recordPubKey, anchorAddress, updatedAt: new Date() })
     .where(eq(users.id, userId))
 
   return recordPubKey
