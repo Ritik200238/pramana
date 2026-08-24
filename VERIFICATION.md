@@ -71,7 +71,7 @@ call sites in the running product at all.
 | Intelligence | 0G Compute Router, `verify_tee` | yes |
 | Memory | 0G Storage, ECIES per user | yes |
 | Record ownership | `HealthRecordAnchor` | yes, since this session |
-| Coach ownership | `CoachAgent`, ERC-7857 | yes, since this session |
+| Coach ownership | `CoachAgent`, ERC-721 with ERC-7857 semantics | yes, since this session |
 | Payments | 0G Pay | **no — see below** |
 
 `npm run test:fork -w @ogt/og` drives both chain bindings end to end against a
@@ -281,6 +281,7 @@ piece did its own job properly. They are only visible from outside.
 | SDK options vs the storage docs | records read back without proof verification |
 | Failover behaviour vs the documented error table | a rate limit walked the chain instead of stopping |
 | Operational blind spots vs the account docs | nothing watched the balance the product runs on |
+| A claimed standard vs its published interface | the coach was described as ERC-7857 and is not |
 | Events and timers with no counterpart | nothing; all clean |
 
 Guards were left behind for five of the six, each verified by mutation rather
@@ -348,6 +349,32 @@ These remain built and unreachable, and are honest backlog rather than defects:
 Run the sweep yourself: the script lives in the session scratchpad, and the
 shape of it is simply every `app.<verb>('path')` in the API compared against
 every path string in the web client.
+
+---
+
+## What the coach contract is, exactly
+
+`CoachAgent` was described as an ERC-7857 token. Checked against the published
+interface, it is not one. The standard specifies
+`transfer(from, to, tokenId, sealedKey, proof)`,
+`clone(to, tokenId, sealedKey, proof)` and
+`authorizeUsage(tokenId, executor, permissions)`; this contract implements none
+of those signatures and does not advertise the interface.
+
+It follows the design — metadata encrypted to the owner, transfer by
+re-encryption under a sealed key, admitted only against an oracle-verified proof
+— and the gap is deliberate. The standard's `transfer` carries the new
+ciphertext location inside `proof`, decoded by the oracle. No oracle is deployed
+and that proof encoding is not specified in any documentation available here, so
+adopting the signatures would mean inventing a format and calling the result
+conformant.
+
+So the accurate description is: an ERC-721 with ERC-7857 semantics. Five tests
+assert that, including that `supportsInterface` does not claim ERC-7857 — a
+standard half-implemented is worse than one honestly not implemented, because
+the first is found by somebody's tooling failing rather than by reading.
+Adopting the interface is a small change once a verifier and its proof format
+exist.
 
 ---
 

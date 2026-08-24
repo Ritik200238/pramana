@@ -57,7 +57,7 @@ Design so 0G **enables** something the product could not do otherwise.
 | **0G Compute** | AI inference, agents, model execution, training/fine-tuning, verifiable computation |
 | **0G Storage** | AI datasets, model files, agent knowledge, large AI data |
 | **0G DA** | high-throughput data availability |
-| **Agentic ID / ERC-7857** | agent identity, ownership, transferability, persistent intelligence |
+| **Agentic ID / ERC-7857** | agent identity, ownership, transferability, persistent intelligence (we implement ERC-7857 semantics on ERC-721; see VERIFICATION.md) |
 | **0G Pay** | agents paying each other, charging users, micropayments, buying compute |
 
 ---

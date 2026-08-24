@@ -22,7 +22,27 @@ interface IOracle {
 /**
  * @title CoachAgent
  * @notice An owned, transferable nutrition coach whose learned intelligence
- *         lives encrypted on 0G Storage — ERC-7857 semantics on 0G Chain.
+ *         lives encrypted on 0G Storage.
+ *
+ * @dev **On ERC-7857, stated precisely.**
+ *
+ *      This contract follows ERC-7857's design — metadata that is encrypted,
+ *      transferred by re-encrypting to the recipient under a sealed key, and
+ *      admitted only against an oracle-verified proof — but it does **not**
+ *      implement `IERC7857`, and does not advertise it through
+ *      `supportsInterface`. It is an ERC-721 with those semantics.
+ *
+ *      The difference is in the signatures, and it is deliberate rather than an
+ *      oversight. The standard's `transfer(from, to, tokenId, sealedKey, proof)`
+ *      carries the new ciphertext location inside `proof`, decoded by the
+ *      oracle. No oracle is deployed yet, and the encoding of that proof is not
+ *      specified in the documentation, so implementing those exact signatures
+ *      would mean inventing a format and calling the result conformant. The
+ *      functions here take the new root and metadata hashes explicitly instead.
+ *
+ *      Anything reading `supportsInterface` will therefore not find ERC-7857
+ *      here, which is the honest answer. Adopting the interface is a small
+ *      change once a verifier and its proof format exist.
  *
  * @dev **Why this contract is the product, not a wrapper around it.**
  *
@@ -525,7 +545,7 @@ contract CoachAgent is ERC721, AccessControl, Pausable, EIP712 {
         return _brains[tokenId].length;
     }
 
-    /// @notice The integrity commitment, per ERC-7857.
+    /// @notice The integrity commitment, in the sense ERC-7857 uses.
     function getMetadataHash(uint256 tokenId) external view returns (bytes32) {
         Brain[] storage history = _brains[tokenId];
         if (history.length == 0) revert UnknownToken(tokenId);
