@@ -3,6 +3,8 @@ pragma solidity 0.8.28;
 
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
+import {EIP712} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
+import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 
 /**
  * @title HealthRecordAnchor
@@ -35,7 +37,7 @@ import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
  *      - **Append-only history.** Snapshots form a chain per user, so a record
  *        has a verifiable timeline rather than a mutable current value.
  */
-contract HealthRecordAnchor is AccessControl, Pausable {
+contract HealthRecordAnchor is AccessControl, Pausable, EIP712 {
     /// @notice May pause anchoring in an incident. Cannot read, write, or revoke user data.
     bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
 
@@ -79,8 +81,29 @@ contract HealthRecordAnchor is AccessControl, Pausable {
     error SnapshotOutOfRange(address owner, uint256 index);
     error CannotGrantToSelf();
     error ZeroGrantee();
+    error InvalidSignature();
+    error NonceAlreadyUsed(address owner, uint256 nonce);
+    error SignatureExpired(uint256 deadline);
 
-    constructor(address admin) {
+    /**
+     * @dev Typed-data hash for a relayed anchor.
+     *
+     *      rootHashes is hashed rather than included directly because EIP-712
+     *      encodes a dynamic array as the hash of its concatenated elements.
+     */
+    bytes32 private constant ANCHOR_TYPEHASH = keccak256(
+        "AnchorSnapshot(bytes32 rootHashesHash,uint32 schemaVersion,uint256 nonce,uint256 deadline)"
+    );
+
+    /// @dev owner => consumed nonces. A signature is good exactly once.
+    mapping(address owner => mapping(uint256 nonce => bool used)) private _usedNonces;
+
+    /// @notice Whether a relayed-anchor nonce has already been spent.
+    function nonceUsed(address owner, uint256 nonce) external view returns (bool) {
+        return _usedNonces[owner][nonce];
+    }
+
+    constructor(address admin) EIP712("HealthRecordAnchor", "1") {
         if (admin == address(0)) revert ZeroGrantee();
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
         _grantRole(PAUSER_ROLE, admin);
@@ -101,6 +124,14 @@ contract HealthRecordAnchor is AccessControl, Pausable {
         whenNotPaused
         returns (uint256 index)
     {
+        index = _appendSnapshot(msg.sender, rootHashes, schemaVersion);
+    }
+
+    /// @dev The one place a snapshot is written, so both entry points validate identically.
+    function _appendSnapshot(address owner, bytes32[] calldata rootHashes, uint32 schemaVersion)
+        private
+        returns (uint256 index)
+    {
         uint256 count = rootHashes.length;
         if (count == 0) revert NoFragments();
         if (count > MAX_FRAGMENTS) revert TooManyFragments(count, MAX_FRAGMENTS);
@@ -109,7 +140,7 @@ contract HealthRecordAnchor is AccessControl, Pausable {
             if (rootHashes[i] == bytes32(0)) revert EmptyRootHash(i);
         }
 
-        Snapshot[] storage history = _snapshots[msg.sender];
+        Snapshot[] storage history = _snapshots[owner];
         index = history.length;
 
         history.push(
@@ -120,7 +151,66 @@ contract HealthRecordAnchor is AccessControl, Pausable {
             })
         );
 
-        emit SnapshotAnchored(msg.sender, index, rootHashes[0], count, schemaVersion);
+        emit SnapshotAnchored(owner, index, rootHashes[0], count, schemaVersion);
+    }
+
+    /**
+     * @notice Anchor a snapshot on behalf of its owner, who signed for it.
+     * @param owner The record owner, and the only account this can ever write to.
+     * @param rootHashes Ordered 0G Storage root hashes for this snapshot.
+     * @param schemaVersion Client-side payload schema version.
+     * @param nonce Single-use, chosen by the signer.
+     * @param deadline Unix seconds after which the signature is worthless.
+     * @param signature EIP-712 signature by `owner`.
+     * @return index Position of the new snapshot in the owner's history.
+     *
+     * @dev This exists because the people this product is for do not hold a
+     *      wallet and never will — sign-in is a phone number and a six-digit
+     *      code. Requiring the owner to also be the transaction sender meant
+     *      every user needed a funded address before they could anchor
+     *      anything, which in practice meant nobody ever did.
+     *
+     *      The authority is unchanged: the snapshot is written to `owner` and
+     *      to nobody else, and only a signature from `owner` produces one.
+     *      What moves is who pays the gas, which is not a security property.
+     *      A relayer can choose whether to submit and can drop a signature it
+     *      does not like; it cannot author one, redirect it to another account,
+     *      or replay it, and it cannot make the deadline later than the signer
+     *      chose.
+     */
+    function anchorSnapshotFor(
+        address owner,
+        bytes32[] calldata rootHashes,
+        uint32 schemaVersion,
+        uint256 nonce,
+        uint256 deadline,
+        bytes calldata signature
+    ) external whenNotPaused returns (uint256 index) {
+        // Deadlines here are minutes, and a validator can move the clock by
+        // seconds. The manipulation this lint warns about cannot reach far
+        // enough to matter, and it is the same comparison EIP-2612 permit uses.
+        // forge-lint: disable-next-line(block-timestamp)
+        if (block.timestamp > deadline) revert SignatureExpired(deadline);
+        if (_usedNonces[owner][nonce]) revert NonceAlreadyUsed(owner, nonce);
+
+        bytes32 digest = _hashTypedDataV4(
+            keccak256(
+                abi.encode(
+                    ANCHOR_TYPEHASH,
+                    keccak256(abi.encodePacked(rootHashes)),
+                    schemaVersion,
+                    nonce,
+                    deadline
+                )
+            )
+        );
+
+        // `recover` reverts on a malformed or malleable signature rather than
+        // returning zero, so there is no address(0) case to guard here.
+        if (ECDSA.recover(digest, signature) != owner) revert InvalidSignature();
+
+        _usedNonces[owner][nonce] = true;
+        index = _appendSnapshot(owner, rootHashes, schemaVersion);
     }
 
     /**
