@@ -610,6 +610,9 @@ contract CoachAgentTest is Test {
 
         vm.startPrank(alice);
         for (uint256 i = coach.versionCount(tokenId); i < limit; ++i) {
+            // casting to 'uint32' is safe because i is bounded above by
+            // MAX_VERSIONS, which is orders of magnitude below uint32 max.
+            // forge-lint: disable-next-line(unsafe-typecast)
             coach.evolve(tokenId, keccak256(abi.encode(i)), keccak256(abi.encode("m", i)), uint32(i));
         }
 
@@ -650,6 +653,9 @@ contract CoachAgentTest is Test {
 
         for (uint256 i = 0; i < count; ++i) {
             vm.prank(alice);
+            // casting to 'uint32' is safe because count is `steps % 12`, so i
+            // never exceeds 11.
+            // forge-lint: disable-next-line(unsafe-typecast)
             coach.evolve(tokenId, keccak256(abi.encode(i)), keccak256(abi.encode("m", i)), uint32(i));
         }
 
