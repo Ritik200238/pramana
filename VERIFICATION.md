@@ -19,10 +19,10 @@ Last updated: 2026-08-24.
 |---|---|---|
 | `@ogt/core` — targets, safety, questions | 45 | `npm test -w @ogt/core` |
 | `@ogt/og` — router, storage, payments | 38 | `npm test -w @ogt/og` |
-| `@ogt/api` — services, routes, wiring | 110 | `npm test -w @ogt/api` |
+| `@ogt/api` — services, routes, wiring | 113 | `npm test -w @ogt/api` |
 | `@ogt/api` — end-to-end, idempotency, delivery | 30 | included above |
 | `@ogt/web` — client and offline queue | 16 | `npm test -w @ogt/web` |
-| `contracts` — Foundry | 80 | `forge test` in `packages/contracts` |
+| `contracts` — Foundry | 94 | `forge test` in `packages/contracts` |
 
 Contract coverage is 100% of lines, statements, branches and functions on both
 `HealthRecordAnchor` and `CoachAgent`.
@@ -128,16 +128,21 @@ OG_ROUTER_API_KEY=sk-... npm run test:live -w @ogt/og
 
 ### Contracts on the live network
 
-**Status: deployed to a fork only, never broadcast.**
+**Status: deployed and exercised on a fork, never broadcast.**
 
-Deployment is verified against forked live chain state, which exercises the real
-chain id, EVM configuration, constructor arguments, post-deploy role assertions
-and gas. What a fork cannot answer is whether the live network accepts the
-broadcast, and no address exists on Galileo yet — so `OG_ANCHOR_ADDRESS` is
-unset and on-chain anchoring is wired to nothing in a running deployment.
+The anchoring path is now complete and end-to-end verified against a fork of
+live Galileo with the contract actually deployed: the worker reads pending
+snapshots, derives the owner account, signs EIP-712, and a relayer submits and
+pays. `npm run test:fork -w @ogt/og`.
+
+Until this session there was no such path at all — see the note below.
+
+What a fork cannot answer is whether the live network accepts the broadcast,
+and no address exists on Galileo yet.
 
 **To close it:** a deployer key funded from the Galileo faucet, then
-`forge script script/Deploy.s.sol:Deploy --rpc-url og_testnet --broadcast`.
+`forge script script/Deploy.s.sol:Deploy --rpc-url og_testnet --broadcast`, and
+set `OG_ANCHOR_ADDRESS` plus `OG_ANCHOR_MASTER_SEED`.
 
 ### 0G Storage round trip
 
@@ -175,6 +180,30 @@ deployment.
 **Status: none.** No usage data, no retention data, and no measurement of the
 thesis metric. Everything about product-market fit in `PRD.md` is a hypothesis
 drawn from research, not an observation.
+
+---
+
+## An open decision for the product owner
+
+**Record-owning keys are custodial today.** Each user's on-chain account is
+derived from one master seed held by the backend, so whoever holds that seed can
+sign an anchor for any user.
+
+This is what makes the product work as designed — sign-in is a phone number and
+a six-digit code, and nobody is asked to keep a seed phrase. It is also strictly
+weaker than the contract's own comment implies. What the anchor still provides:
+an append-only public timeline nobody can rewrite, a record that outlives the
+company, and a pointer the user can take elsewhere. What it does not provide:
+protection from us specifically.
+
+The relayed-anchor design was chosen so the fix stays cheap. Moving the key into
+the user's browser changes who calls `signAnchor` and nothing else — no contract
+change, no migration of existing records. What it costs is a recovery story for
+a lost device, which is a product decision rather than an engineering one.
+
+**This needs a decision before launch**, because the marketing copy depends on
+it. Ship custodial and describe it accurately, or hold the ownership claim until
+keys are user-held.
 
 ---
 
@@ -221,9 +250,10 @@ supplies it.
 
 ```bash
 npm install
-npm test --workspaces                      # 239 tests, no network required
+npm test --workspaces                      # 248 tests, no network required
 npm run test:live -w @ogt/og               # 6 live checks; 4 more with a key
 cd packages/contracts && forge test        # 80 tests
 bash script/verify-fork.sh                 # deploy + exercise on forked Galileo
+npm run test:fork -w @ogt/og               # the whole anchoring path on a fork
 npm run preflight -w @ogt/api              # check a deployment against live systems
 ```
