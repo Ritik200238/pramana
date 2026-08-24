@@ -18,10 +18,16 @@ import type { FastifyBaseLogger } from 'fastify'
 import type { Database } from '../db/index.ts'
 import { snapshots, users } from '../db/schema.ts'
 import { runSnapshot } from './snapshot.ts'
+import { ensureRecordKey } from '../services/record-key.ts'
 
 export interface SchedulerOptions {
   db: Database
   storage: OGStorage
+  /**
+   * Derives the key each record is encrypted to. Absent means no snapshot can
+   * be addressed to anybody, which is reported rather than passed over.
+   */
+  masterSeed?: string | undefined
   logger: FastifyBaseLogger
   /** How often to look for work. Default hourly. */
   intervalMs?: number
@@ -54,16 +60,29 @@ export function startScheduler(options: SchedulerOptions): Scheduler {
       let succeeded = 0
       let failed = 0
 
+      if (due.length > 0 && !options.masterSeed) {
+        // Said out loud. The previous behaviour was to filter these users out
+        // of the query entirely, which made a total outage look like an empty
+        // queue for as long as anybody cared to look.
+        options.logger.error(
+          { due: due.length },
+          'no OG_ANCHOR_MASTER_SEED: records cannot be encrypted to anyone, so nothing is snapshotted',
+        )
+        return { attempted: 0, succeeded: 0, failed: 0 }
+      }
+
       for (const user of due) {
         try {
           const to = new Date()
           const from = new Date(to.getTime() - 30 * DAY_MS)
 
+          const recordPubKey = await ensureRecordKey(options.db, options.masterSeed!, user.id)
+
           const result = await runSnapshot({
             db: options.db,
             storage: options.storage,
             userId: user.id,
-            recordPubKey: user.recordPubKey,
+            recordPubKey,
             from,
             to,
           })
@@ -102,36 +121,28 @@ export function startScheduler(options: SchedulerOptions): Scheduler {
   }
 }
 
-/**
- * Users who have a record key and no snapshot in the last day.
- *
- * A missing `recordPubKey` is not an error — it means we have nowhere to
- * address the ciphertext, so there is nothing safe to write.
- */
-async function findUsersDueForSnapshot(
+/** Users with no snapshot in the last day. */
+export async function findUsersDueForSnapshot(
   db: Database,
   limit: number,
-): Promise<Array<{ id: string; recordPubKey: string }>> {
+): Promise<Array<{ id: string }>> {
   const cutoff = new Date(Date.now() - DAY_MS)
 
-  const rows = await db
-    .select({ id: users.id, recordPubKey: users.recordPubKey })
+  // Deliberately does not filter on record_pub_key. That filter was here, the
+  // column was never populated, and so this returned nothing for every user
+  // while looking like a healthy empty queue. A key that does not exist yet is
+  // created when it is needed, not used as a reason to skip somebody.
+  return db
+    .select({ id: users.id })
     .from(users)
     .where(
-      and(
-        sql`${users.recordPubKey} IS NOT NULL`,
-        sql`NOT EXISTS (
-          SELECT 1 FROM ${snapshots}
-          WHERE ${snapshots.userId} = ${users.id}
-            AND ${snapshots.createdAt} > ${cutoff}
-        )`,
-      ),
+      sql`NOT EXISTS (
+        SELECT 1 FROM ${snapshots}
+        WHERE ${snapshots.userId} = ${users.id}
+          AND ${snapshots.createdAt} > ${cutoff}
+      )`,
     )
     .limit(limit)
-
-  return rows.flatMap((row) =>
-    row.recordPubKey ? [{ id: row.id, recordPubKey: row.recordPubKey }] : [],
-  )
 }
 
 /** Snapshots written but not yet anchored on chain. Read by the anchor worker. */

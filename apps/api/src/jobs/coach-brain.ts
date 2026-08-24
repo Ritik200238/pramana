@@ -20,12 +20,13 @@
  * and a count of what it knows go on chain.
  */
 
-import { and, eq, isNotNull, sql } from 'drizzle-orm'
+import { and, eq, isNotNull } from 'drizzle-orm'
 import { CoachClient, brainMetadataHash, deriveOwnerAccount, type OGStorage } from '@ogt/og'
 import type { FastifyBaseLogger } from 'fastify'
 import { ethers } from 'ethers'
 import type { Database } from '../db/index.ts'
 import { lifeFacts, userFoods, users } from '../db/schema.ts'
+import { ensureRecordKey } from '../services/record-key.ts'
 
 export const BRAIN_SCHEMA_VERSION = 1
 
@@ -151,7 +152,12 @@ export function startCoachWorker(options: CoachWorkerOptions): CoachWorker {
           const metadataHash = brainMetadataHash(plaintext)
 
           // The ciphertext goes to 0G Storage; the chain only ever sees hashes.
-          const { rootHashes } = await options.storage.putSnapshot(brain, candidate.recordPubKey)
+          const recordPubKey = await ensureRecordKey(
+            options.db,
+            options.masterSeed,
+            candidate.userId,
+          )
+          const { rootHashes } = await options.storage.putSnapshot(brain, recordPubKey)
 
           const first = rootHashes[0]
           if (!first) throw new Error('storage returned no root hash for the brain')
@@ -275,29 +281,26 @@ export function nonceFrom(subject: string, purpose: string): bigint {
   return BigInt(hash) >> 8n
 }
 
-/** Users with a record key, who either have no coach or may have outgrown one. */
+/**
+ * Users who either have no coach or may have outgrown the one on chain.
+ *
+ * Does not filter on record_pub_key. That filter was here, the column was
+ * never written, and so this returned nothing for every user — no coach was
+ * ever minted and the queue looked empty rather than broken.
+ */
 export async function findCoachWork(db: Database, limit: number) {
   const rows = await db
     .select({
       userId: users.id,
-      recordPubKey: users.recordPubKey,
       coachTokenId: users.coachTokenId,
       coachLearnedCount: users.coachLearnedCount,
     })
     .from(users)
-    .where(sql`${users.recordPubKey} IS NOT NULL`)
     .limit(limit)
 
-  return rows.flatMap((row) =>
-    row.recordPubKey
-      ? [
-          {
-            userId: row.userId,
-            recordPubKey: row.recordPubKey,
-            coachTokenId: row.coachTokenId,
-            coachLearnedCount: row.coachLearnedCount ?? 0,
-          },
-        ]
-      : [],
-  )
+  return rows.map((row) => ({
+    userId: row.userId,
+    coachTokenId: row.coachTokenId,
+    coachLearnedCount: row.coachLearnedCount ?? 0,
+  }))
 }

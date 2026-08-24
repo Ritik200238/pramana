@@ -101,12 +101,47 @@ test('the scheduler cannot run two overlapping passes', () => {
 })
 
 test('a snapshot is never attempted without somewhere to address it', () => {
+  // This test used to assert the opposite, and was wrong in a way worth
+  // recording. It required the query to filter `record_pub_key IS NOT NULL`,
+  // treating that as the safety property. The column was never written by
+  // anything, so the filter matched no rows for any user — no snapshot was
+  // ever built, nothing reached 0G Storage, nothing was ever anchored, and no
+  // coach was minted. A total outage that looked exactly like an empty queue,
+  // held in place by a passing test.
+  //
+  // The real property is that ciphertext must have a valid recipient. The way
+  // to get one is to create it, not to skip the user.
   const source = code(read('jobs', 'scheduler.ts'))
-  assert.match(
+
+  assert.doesNotMatch(
     source,
-    /recordPubKey.*IS NOT NULL|IS NOT NULL/,
-    'no record key means no safe ciphertext recipient',
+    /record_pub_key IS NOT NULL|recordPubKey} IS NOT NULL/,
+    'a missing key must not silently remove somebody from the queue',
   )
+
+  const ensureAt = source.indexOf('ensureRecordKey(')
+  const uploadAt = source.indexOf('runSnapshot(')
+  assert.ok(ensureAt > -1, 'the key must be obtained before the upload')
+  assert.ok(ensureAt < uploadAt, 'and obtained before, not after')
+  assert.match(source, /recordPubKey,/, 'and handed to the snapshot as the recipient')
+})
+
+test('an unconfigured seed is reported, not silently skipped', () => {
+  // The failure mode being prevented: three 0G bindings inert for every user
+  // with nothing in the log to say so.
+  const source = code(read('jobs', 'scheduler.ts'))
+  assert.match(source, /logger\.error\(/, 'a total outage must announce itself')
+  assert.match(source, /masterSeed/, 'and name what is missing')
+})
+
+test('the coach worker does not filter itself into an empty queue either', () => {
+  const source = code(read('jobs', 'coach-brain.ts'))
+  assert.doesNotMatch(
+    source,
+    /record_pub_key IS NOT NULL|recordPubKey} IS NOT NULL/,
+    'the same filter emptied this worker too',
+  )
+  assert.match(source, /ensureRecordKey\(/, 'it creates the key it needs')
 })
 
 test('export includes every table the product writes', () => {

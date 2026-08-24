@@ -453,6 +453,59 @@ test('liveness is still recorded once it has gone stale', async () => {
   })
 })
 
+test('a real user is actually eligible for a snapshot', async () => {
+  await withHarness(async (h) => {
+    const { token } = await signIn(h, '9700000005')
+    await h.app.inject({
+      method: 'POST',
+      url: '/users/me/profile',
+      headers: auth(token),
+      payload: VALID_PROFILE,
+    })
+
+    // The bug this guards was total and silent: the snapshot query filtered on
+    // record_pub_key, nothing ever wrote that column, so the queue was empty
+    // for every user forever — no storage, no anchoring, no coach — and an
+    // empty queue is indistinguishable from finished work.
+    const { findUsersDueForSnapshot } = await import('../src/jobs/scheduler.ts')
+    const due = await findUsersDueForSnapshot(h.db, 10)
+
+    assert.equal(due.length, 1, 'a freshly onboarded user must be due for a snapshot')
+  })
+})
+
+test('the record key is created on demand and never changes', async () => {
+  await withHarness(async (h) => {
+    const { token } = await signIn(h, '9700000006')
+    await h.app.inject({
+      method: 'POST',
+      url: '/users/me/profile',
+      headers: auth(token),
+      payload: VALID_PROFILE,
+    })
+
+    const me = await h.app.inject({ method: 'GET', url: '/auth/me', headers: auth(token) })
+    const userId = me.json().user.id
+
+    const { ensureRecordKey } = await import('../src/services/record-key.ts')
+    const seed = 'a-master-seed-long-enough-to-be-accepted'
+
+    const first = await ensureRecordKey(h.db, seed, userId)
+    const second = await ensureRecordKey(h.db, seed, userId)
+
+    // Compressed secp256k1. Stable, because a record encrypted to one key and
+    // an anchor owned by another would be unrecoverable.
+    assert.match(first, /^0x0[23][0-9a-f]{64}$/)
+    assert.equal(second, first, 'the key must never change under a user')
+
+    const rows = await h.db.execute(
+      `select record_pub_key from users where id = '${userId}'`,
+    )
+    const list = (rows as unknown as { rows?: Array<{ record_pub_key: string }> }).rows ?? rows
+    assert.equal((list as Array<{ record_pub_key: string }>)[0]?.record_pub_key, first)
+  })
+})
+
 test('readiness reports the database it actually depends on', async () => {
   await withHarness(async (h) => {
     const response = await h.app.inject({ method: 'GET', url: '/ready' })

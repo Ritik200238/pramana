@@ -236,7 +236,12 @@ export async function buildServer(overrides: ServerOverrides = {}) {
 
   // 0G Storage snapshots. Without this the encrypted user-owned record is a
   // claim rather than a mechanism — the code existed but nothing ran it.
-  const scheduler = startScheduler({ db, storage, logger: app.log })
+  const scheduler = startScheduler({
+    db,
+    storage,
+    masterSeed: config.OG_ANCHOR_MASTER_SEED,
+    logger: app.log,
+  })
   if (overrides.backgroundJobs === false) scheduler.stop()
 
   /*

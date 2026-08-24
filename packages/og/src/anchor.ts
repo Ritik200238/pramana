@@ -23,6 +23,7 @@
  */
 
 import { ethers } from 'ethers'
+import { publicKeyFor } from './storage.ts'
 
 /** Only what is called here. A full ABI would be noise. */
 export const ANCHOR_ABI = [
@@ -72,6 +73,19 @@ export function deriveOwnerAccount(masterSeed: string, userId: string): ethers.W
   // path, whose 31-bit indices would collide across a large user base.
   const key = ethers.keccak256(ethers.toUtf8Bytes(`${masterSeed}:${userId}`))
   return new ethers.Wallet(key)
+}
+
+/**
+ * The public key a user's records are encrypted to.
+ *
+ * The same derived account serves both roles on purpose: it is the ECIES
+ * recipient for the ciphertext in 0G Storage, and the owner of the record on
+ * chain. One key per person is easier to reason about, easier to hand over if
+ * custody ever moves to the user, and removes a whole class of bug where the
+ * thing that can decrypt a record is not the thing that owns it.
+ */
+export function deriveRecordPublicKey(masterSeed: string, userId: string): string {
+  return publicKeyFor(deriveOwnerAccount(masterSeed, userId).privateKey)
 }
 
 export interface AnchorRequest {
