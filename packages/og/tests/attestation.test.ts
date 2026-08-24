@@ -97,7 +97,9 @@ test('a receipt is timestamped so it can be reconciled later', () => {
 
 test('the human description tells the truth for each state', () => {
   const states: Array<[AttestationReceipt['status'], RegExp]> = [
-    ['verified', /sealed enclave/i],
+    // "sealed hardware", not "sealed enclave, nobody could read it" — see
+    // claims.test.ts for why that phrasing had to go.
+    ['verified', /sealed hardware/i],
     ['failed', /could not be verified/i],
     ['unavailable', /did not return a result/i],
     ['unrequested', /not requested/i],

@@ -358,7 +358,7 @@ export async function registerCoachRoutes(
         rows.length === 0
           ? 'Nothing computed yet.'
           : verified === rows.length
-            ? `All ${rows.length} computations ran inside hardware-sealed enclaves, verified by 0G. Nobody — including us — could read them.`
+            ? `All ${rows.length} computations ran on providers 0G verified as running inside sealed hardware. That verification is 0G's own check, reported here — not a signature you can re-run yourself.`
             : `${verified} of ${rows.length} computations were verified as running inside a sealed enclave.`,
       receipts: rows.map((row) => ({
         ...row,

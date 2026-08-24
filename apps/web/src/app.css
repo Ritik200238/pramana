@@ -1413,3 +1413,28 @@ body {
   font-size: 26px;
   font-variant-numeric: tabular-nums;
 }
+
+/*
+ * The trust note.
+ *
+ * Collapsed, because most people will not open it — and available, because the
+ * people who do open it are exactly the ones whose trust is worth having.
+ */
+.trust-note {
+  margin-top: 12px;
+  font-size: 14px;
+  color: var(--ink-2);
+}
+
+.trust-note summary {
+  cursor: pointer;
+  color: var(--accent);
+  min-height: var(--tap);
+  display: flex;
+  align-items: center;
+}
+
+.trust-note p {
+  margin: 0 0 10px;
+  line-height: 1.55;
+}

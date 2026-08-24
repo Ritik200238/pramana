@@ -210,8 +210,8 @@ export function SignIn({ onSignedIn }: SignInProps) {
 
       <footer className="signin-foot">
         <p className="muted">
-          Your food photos and health data are processed inside hardware-sealed enclaves on 0G.
-          Nobody — including us — can read them.
+          Your photos and health data are computed by providers running in sealed hardware on
+          0G, and every computation leaves a receipt you can read.
         </p>
       </footer>
     </div>

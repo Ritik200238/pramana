@@ -120,11 +120,19 @@ export function isTrustworthy(receipt: AttestationReceipt): boolean {
 }
 
 /**
- * Whether this receipt can back the privacy claim to a third party.
+ * Whether this receipt is worth showing as evidence at all.
  *
- * Only 'verified' does. 'unrequested' and 'unavailable' are honest states we
- * record rather than hide, but neither is evidence, and neither should be shown
- * to a user as though it were.
+ * Only 'verified' is. 'unrequested' and 'unavailable' are honest states we
+ * record rather than hide, but neither is evidence.
+ *
+ * Worth being precise about what 'verified' means, because the documentation is
+ * precise about it and our copy was not. The Router fetches the provider's TEE
+ * signature, looks the signer up on chain, checks it, and returns one boolean.
+ * It does not return the signature. So `tee_verified: true` is the Router's
+ * word that it did the check — strong, checkable against a named provider and
+ * request id, and still somebody else's assertion rather than a proof we hold.
+ *
+ * Source: 0G docs, Router → Verifiable Execution, "Trust model".
  */
 export function isProvable(receipt: AttestationReceipt): boolean {
   return receipt.status === 'verified'
@@ -134,7 +142,7 @@ export function isProvable(receipt: AttestationReceipt): boolean {
 export function describeReceipt(receipt: AttestationReceipt): string {
   switch (receipt.status) {
     case 'verified':
-      return `Computed inside a hardware-sealed enclave by provider ${short(receipt.provider)}, verified by 0G. Nobody — including us — could read it.`
+      return `Provider ${short(receipt.provider)} ran this inside sealed hardware, and 0G verified its signature. That check is 0G's, reported to us — not a signature we hold.`
     case 'failed':
       return 'This response could not be verified as coming from a sealed enclave, so it was not used.'
     case 'unavailable':

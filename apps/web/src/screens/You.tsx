@@ -145,6 +145,35 @@ export function You({ onSignedOut }: YouProps) {
                 >
                   {showReceipts ? 'Hide receipts' : 'Show the receipts'}
                 </button>
+
+                {/*
+                  * What this does and does not prove, in the place somebody is
+                  * actually deciding whether to believe it.
+                  *
+                  * 0G's documentation is explicit that verify_tee returns the
+                  * Router's word that it checked the provider's signature, not
+                  * the signature itself. Our copy claimed more than that, and a
+                  * privacy claim that overstates its evidence is worse than a
+                  * smaller one that holds.
+                  */}
+                <details className="trust-note">
+                  <summary>What does &ldquo;verified&rdquo; actually mean?</summary>
+                  <p>
+                    Each provider runs inside sealed hardware and signs what it computes. 0G
+                    checks that signature against the provider&rsquo;s registered address on
+                    chain and tells us the result. You get the provider&rsquo;s address and a
+                    request id, so a claim is traceable to a specific machine and moment.
+                  </p>
+                  <p>
+                    What you do not get is the signature itself, so this rests on 0G having
+                    done the check honestly. It is a receipt, not a proof you can re-run.
+                  </p>
+                  <p>
+                    Separately: your stored records are encrypted to a key we currently hold on
+                    your behalf, because signing in is a phone number and nothing else. We can
+                    read them. Moving that key onto your device is the next thing to change.
+                  </p>
+                </details>
               </>
             )}
 
