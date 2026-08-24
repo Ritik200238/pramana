@@ -215,7 +215,21 @@ export interface ProofReceipt {
 
 const BASE = '/api'
 const TOKEN_KEY = 'ogt.token'
-const OFFSET = -new Date().getTimezoneOffset()
+/**
+ * Minutes east of UTC, read at the moment it is needed.
+ *
+ * This was captured once when the module loaded, which is fine for a page
+ * reloaded every visit and wrong for an installed app. A PWA resumed from the
+ * background lives for days, and somebody who flies with it keeps sending the
+ * offset of the country they left — so a meal eaten on Tuesday morning is filed
+ * against Monday, and the day's totals they are shown are somebody else's day.
+ *
+ * The same shape of mistake as reading a timezone once on the server: it looks
+ * right, and it quietly puts a meal in the wrong day.
+ */
+function utcOffsetMinutes(): number {
+  return -new Date().getTimezoneOffset()
+}
 
 export class ApiError extends Error {
   readonly status: number
@@ -446,7 +460,7 @@ export const api = {
   // ---- the day ----
 
   today() {
-    return request<DaySummary>(`/users/me/today?utcOffsetMinutes=${OFFSET}`)
+    return request<DaySummary>(`/users/me/today?utcOffsetMinutes=${utcOffsetMinutes()}`)
   },
 
   usuals() {
@@ -516,36 +530,36 @@ export const api = {
   suggest(available?: string) {
     return request<{ suggestion: string; proteinLeftG: number } | BlockedResponse>(
       '/users/me/suggest',
-      { method: 'POST', body: JSON.stringify({ available, utcOffsetMinutes: OFFSET }) },
+      { method: 'POST', body: JSON.stringify({ available, utcOffsetMinutes: utcOffsetMinutes() }) },
     )
   },
 
   dayLine() {
     return request<{ line: string; streak: StreakState }>(
-      `/users/me/day-line?utcOffsetMinutes=${OFFSET}`,
+      `/users/me/day-line?utcOffsetMinutes=${utcOffsetMinutes()}`,
     )
   },
 
   weekly() {
     return request<{ review: string | null; message?: string; facts: unknown }>(
-      `/users/me/weekly?utcOffsetMinutes=${OFFSET}`,
+      `/users/me/weekly?utcOffsetMinutes=${utcOffsetMinutes()}`,
     )
   },
 
   ask(question: string, days = 14) {
     return request<{ answer: string; notice?: string } | BlockedResponse>('/users/me/ask', {
       method: 'POST',
-      body: JSON.stringify({ question, days, utcOffsetMinutes: OFFSET }),
+      body: JSON.stringify({ question, days, utcOffsetMinutes: utcOffsetMinutes() }),
     })
   },
 
   streak() {
-    return request<StreakState>(`/users/me/streak?utcOffsetMinutes=${OFFSET}`)
+    return request<StreakState>(`/users/me/streak?utcOffsetMinutes=${utcOffsetMinutes()}`)
   },
 
   proactive() {
     return request<{ message: ProactiveMessage | null }>(
-      `/users/me/proactive?utcOffsetMinutes=${OFFSET}`,
+      `/users/me/proactive?utcOffsetMinutes=${utcOffsetMinutes()}`,
     )
   },
 

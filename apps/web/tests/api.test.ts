@@ -540,3 +540,47 @@ describe('the queue on a shared phone', () => {
     expect(api.queueLength()).toBe(1)
   })
 })
+
+describe('a phone that travels', () => {
+  test('the timezone offset is read per request, not once at startup', async () => {
+    const realOffset = Date.prototype.getTimezoneOffset
+
+    try {
+      // India.
+      Date.prototype.getTimezoneOffset = () => -330
+      let calls = scriptFetch([200])
+      await api.api.today()
+      expect(calls[0]!.path).toContain('utcOffsetMinutes=330')
+
+      /*
+       * The same installed app, resumed after a flight. Captured once at module
+       * load, this would still say 330 — and a meal eaten on Tuesday morning
+       * would be filed against Monday, with a day's totals belonging to
+       * somebody else's day.
+       */
+      Date.prototype.getTimezoneOffset = () => 300
+      calls = scriptFetch([200])
+      await api.api.today()
+      expect(calls[0]!.path).toContain('utcOffsetMinutes=-300')
+    } finally {
+      Date.prototype.getTimezoneOffset = realOffset
+    }
+  })
+
+  test('every day-scoped read carries the current offset', async () => {
+    const realOffset = Date.prototype.getTimezoneOffset
+
+    try {
+      Date.prototype.getTimezoneOffset = () => 0
+      for (const call of [api.api.today, api.api.streak, api.api.proactive, api.api.dayLine]) {
+        const calls = scriptFetch([200])
+        await call()
+        // A read that decides which day something belongs to must not use a
+        // different clock from its neighbours.
+        expect(calls[0]!.path).toContain('utcOffsetMinutes=0')
+      }
+    } finally {
+      Date.prototype.getTimezoneOffset = realOffset
+    }
+  })
+})
