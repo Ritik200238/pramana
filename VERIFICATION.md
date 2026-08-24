@@ -21,7 +21,7 @@ Last updated: 2026-08-24.
 | `@ogt/og` — router, storage, encryption, speech, claims, cost | 78 | `npm test -w @ogt/og` |
 | `@ogt/api` — services, routes, wiring | 194 | `npm test -w @ogt/api` |
 | `@ogt/api` — end-to-end, idempotency, delivery | 30 | included above |
-| `@ogt/web` — client, offline queue, reachability, caching | 27 | `npm test -w @ogt/web` |
+| `@ogt/web` — client, offline queue, reachability, caching | 32 | `npm test -w @ogt/web` |
 | `contracts` — Foundry | 108 | `forge test` in `packages/contracts` |
 
 Contract coverage is 100% of lines, statements, branches and functions on both
@@ -120,6 +120,9 @@ Each of these is asserted by a test that fails if the property breaks:
 - The service worker caches only reads that benefit from working offline, never
   the export or anything under `/auth`, and the cache is emptied whenever a
   session ends. Checked against the built service worker, not the config.
+- A meal logged offline is sent only to the person who logged it. Somebody
+  else's queued meals are left untouched rather than flushed into whoever signs
+  in next.
 - A replayed write is applied once; a key reused for different content is
   refused; two concurrent replays cannot both run the write.
 - Every route whose handler calls a model appears in the per-user cost limits,
@@ -317,6 +320,7 @@ piece did its own job properly. They are only visible from outside.
 | Client response types vs what the API sends | clean; two shared shapes were copies and are now imported |
 | Unbounded inputs reaching a model or a provider | image routes accepted any URL, fetched on our account |
 | What the service worker caches, on a shared device | a day of health records survived sign-out |
+| What else survives sign-out on a shared device | queued meals flushed into the next person's account |
 | Events and timers with no counterpart | nothing; all clean |
 
 Guards were left behind for five of the six, each verified by mutation rather
@@ -484,7 +488,7 @@ supplies it.
 
 ```bash
 npm install
-npm test --workspaces                      # 344 tests, no network required
+npm test --workspaces                      # 349 tests, no network required
 npm run test:live -w @ogt/og               # 6 live checks; 4 more with a key
 cd packages/contracts && forge test        # 108 tests
 bash script/verify-fork.sh                 # deploy + exercise on forked Galileo
