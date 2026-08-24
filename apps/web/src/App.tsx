@@ -15,10 +15,11 @@ import { Today } from './screens/Today.tsx'
 import { MealFlow } from './screens/MealFlow.tsx'
 import { Chat } from './screens/Chat.tsx'
 import { Coach } from './screens/Coach.tsx'
+import { You } from './screens/You.tsx'
 import { api, clearToken, flushQueue, queueLength, SESSION_EXPIRED } from './lib/api.ts'
 import './app.css'
 
-type Tab = 'today' | 'coach' | 'chat'
+type Tab = 'today' | 'coach' | 'chat' | 'you'
 
 type Auth =
   | { state: 'loading' }
@@ -109,9 +110,17 @@ export function App() {
         )}
         {tab === 'coach' && <Coach />}
         {tab === 'chat' && <Chat />}
+        {tab === 'you' && (
+          <You
+            onSignedOut={() => {
+              clearToken()
+              setAuth({ state: 'signed-out' })
+            }}
+          />
+        )}
       </main>
 
-      <nav className="tabs tabs-4" aria-label="Sections">
+      <nav className="tabs tabs-5" aria-label="Sections">
         <button
           type="button"
           className={tab === 'today' ? 'tab tab-on' : 'tab'}
@@ -139,6 +148,14 @@ export function App() {
           aria-current={tab === 'chat' ? 'page' : undefined}
         >
           Chat
+        </button>
+        <button
+          type="button"
+          className={tab === 'you' ? 'tab tab-on' : 'tab'}
+          onClick={() => setTab('you')}
+          aria-current={tab === 'you' ? 'page' : undefined}
+        >
+          You
         </button>
       </nav>
 

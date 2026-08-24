@@ -898,8 +898,9 @@ body {
  * "once the data is there, it mostly stops at charts" is the complaint this
  * whole screen exists to answer.
  */
-.tabs-4 {
-  grid-template-columns: 1fr 1fr auto 1fr;
+.tabs-5 {
+  /* The capture button keeps the middle. Everything else divides what is left. */
+  grid-template-columns: 1fr 1fr auto 1fr 1fr;
 }
 
 .streak {
@@ -1204,4 +1205,211 @@ body {
 .chip-button,
 .quiet {
   min-height: var(--tap);
+}
+
+/* ---------------------------------------------------------------------- you */
+
+.you {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+/*
+ * The proof panel leads the screen.
+ *
+ * The sign-in screen makes a claim about sealed hardware. Until this existed,
+ * the evidence for it was an API endpoint nobody could reach — which makes the
+ * claim marketing. A person being able to check it is the whole difference.
+ */
+.proof {
+  padding: 18px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.proof-verified {
+  border-color: color-mix(in srgb, var(--good) 45%, var(--line));
+}
+
+.proof h2,
+.you .panel h2 {
+  margin: 0 0 8px;
+  font-size: 17px;
+}
+
+.proof-summary {
+  margin: 0 0 12px;
+  line-height: 1.5;
+}
+
+.proof-count {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.proof-count strong {
+  font-size: 30px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--good);
+}
+
+.proof-count span {
+  color: var(--ink-2);
+  font-size: 14px;
+}
+
+.receipts {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.receipt {
+  padding: 10px 12px;
+  background: var(--surface-2);
+  border-radius: 10px;
+  font-size: 14px;
+}
+
+.receipt-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.receipt-task {
+  font-weight: 600;
+}
+
+.receipt-badge {
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--line);
+  color: var(--ink-2);
+}
+
+.receipt-verified {
+  background: color-mix(in srgb, var(--good) 22%, transparent);
+  color: var(--good);
+}
+
+.receipt-failed {
+  background: color-mix(in srgb, var(--bad) 22%, transparent);
+  color: var(--bad);
+}
+
+.receipt-meta {
+  color: var(--ink-3);
+  margin-top: 2px;
+  word-break: break-word;
+}
+
+.receipt a {
+  display: inline-block;
+  margin-top: 6px;
+  color: var(--accent);
+}
+
+.options-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.export-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--tap);
+  padding: 0 20px;
+  background: var(--surface-2);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  font-size: 16px;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+/*
+ * Sign-out is the one destructive action here, and it is styled as such
+ * without being alarming — on a shared phone this is the button somebody
+ * needs to find quickly.
+ */
+.danger {
+  min-height: var(--tap);
+  padding: 0 20px;
+  background: none;
+  border: 1px solid color-mix(in srgb, var(--bad) 50%, var(--line));
+  border-radius: var(--radius);
+  color: var(--bad);
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* ------------------------------------------------------- correcting an item */
+
+/*
+ * Item names are buttons. The affordance is deliberately quiet — a dotted
+ * underline rather than a link colour — because the meal list is something
+ * people read far more often than they correct.
+ */
+.item-correct {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  text-decoration: underline dotted var(--ink-3);
+  text-underline-offset: 3px;
+}
+
+.item-correct:hover {
+  text-decoration-color: var(--accent);
+}
+
+.stepper {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.stepper button {
+  width: var(--tap);
+  height: var(--tap);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  color: var(--ink);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.stepper strong {
+  min-width: 3ch;
+  text-align: center;
+  font-size: 26px;
+  font-variant-numeric: tabular-nums;
 }
