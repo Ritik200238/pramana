@@ -13,7 +13,7 @@ import cors from '@fastify/cors'
 import multipart from '@fastify/multipart'
 import { z } from 'zod'
 import { sql } from 'drizzle-orm'
-import { assertAllChainsAreTeeAttested, createClient, NETWORKS, OGStorage } from '@ogt/og'
+import { AnchorClient, assertAllChainsAreTeeAttested, createClient, NETWORKS, OGStorage } from '@ogt/og'
 import type OpenAI from 'openai'
 import { loadConfig } from './config.ts'
 import { createDb, type Database } from './db/index.ts'
@@ -24,6 +24,7 @@ import { registerExportRoutes } from './routes/export.ts'
 import { registerDayRoutes } from './routes/day.ts'
 import { registerCoachRoutes } from './routes/coach.ts'
 import { startScheduler } from './jobs/scheduler.ts'
+import { startAnchorWorker } from './jobs/anchor.ts'
 import { authPlugin } from './plugins/auth.ts'
 import { idempotencyPlugin } from './plugins/idempotency.ts'
 import { ipLimitsPlugin, userLimitsPlugin } from './plugins/limits.ts'
@@ -230,8 +231,41 @@ export async function buildServer(overrides: ServerOverrides = {}) {
   const scheduler = startScheduler({ db, storage, logger: app.log })
   if (overrides.backgroundJobs === false) scheduler.stop()
 
+  /*
+   * On-chain anchoring.
+   *
+   * Both the address and the seed are required, and the absence of either is
+   * reported rather than passed over. Anchoring is what turns "the user owns
+   * the pointer" from a claim about our database into a property of a public
+   * chain, so running without it should be a decision somebody made, not one
+   * they drifted into.
+   */
+  const anchorWorker =
+    config.OG_ANCHOR_ADDRESS && config.OG_ANCHOR_MASTER_SEED
+      ? startAnchorWorker({
+          db,
+          client: new AnchorClient({
+            rpcUrl: config.OG_RPC_URL_OVERRIDE ?? NETWORKS[config.OG_NETWORK].rpcUrl,
+            contractAddress: config.OG_ANCHOR_ADDRESS,
+            relayerPrivateKey: config.OG_STORAGE_PRIVATE_KEY,
+            chainId: NETWORKS[config.OG_NETWORK].chainId,
+          }),
+          masterSeed: config.OG_ANCHOR_MASTER_SEED,
+          logger: app.log,
+        })
+      : null
+
+  if (overrides.backgroundJobs === false) anchorWorker?.stop()
+  if (!anchorWorker) {
+    app.log.warn(
+      'On-chain anchoring is off: set OG_ANCHOR_ADDRESS and OG_ANCHOR_MASTER_SEED. ' +
+        'Snapshots will be written to 0G Storage with their pointers held only here.',
+    )
+  }
+
   app.addHook('onClose', async () => {
     scheduler.stop()
+    anchorWorker?.stop()
     await close()
   })
 
@@ -266,9 +300,12 @@ export async function buildServer(overrides: ServerOverrides = {}) {
         return reply.status(404).send({ error: 'not_found' })
       }
 
-      const result = await scheduler.runOnce()
-      request.log.info(result, 'manual snapshot pass')
-      return reply.status(200).send(result)
+      const snapshotResult = await scheduler.runOnce()
+      // Anchoring follows snapshotting, so a forced pass produces a complete
+      // record rather than one waiting on the next timer to reach the chain.
+      const anchorResult = (await anchorWorker?.runOnce()) ?? null
+      request.log.info({ snapshotResult, anchorResult }, 'manual snapshot pass')
+      return reply.status(200).send({ snapshots: snapshotResult, anchors: anchorResult })
     })
   }
 

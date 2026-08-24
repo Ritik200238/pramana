@@ -37,6 +37,16 @@ const schema = z.object({
   /** Production RPC. The public endpoint is documented as development-only. */
   OG_RPC_URL_OVERRIDE: z.string().url().optional(),
 
+  /**
+   * Seed from which each user's record-owning account is derived.
+   *
+   * Whoever holds this can sign for any user's anchor, so it is custodial and
+   * the docs say so plainly rather than implying otherwise. It is required
+   * whenever anchoring is switched on, because deriving from a weak or absent
+   * seed would put every user's record under a guessable key.
+   */
+  OG_ANCHOR_MASTER_SEED: z.string().min(32).optional(),
+
   /** Deployed HealthRecordAnchor address. Absent until the contract is deployed. */
   OG_ANCHOR_ADDRESS: z
     .string()

@@ -222,11 +222,15 @@ async function main(): Promise<void> {
     return { state: 'ok', detail: `${wallet.address} holds ${ethers.formatEther(balance)} 0G` }
   })
 
-  await check('HealthRecordAnchor', false, async () => {
-    if (!config.OG_ANCHOR_ADDRESS) {
+  await check('on-chain anchoring', false, async () => {
+    if (!config.OG_ANCHOR_ADDRESS || !config.OG_ANCHOR_MASTER_SEED) {
+      const missing = [
+        config.OG_ANCHOR_ADDRESS ? null : 'OG_ANCHOR_ADDRESS',
+        config.OG_ANCHOR_MASTER_SEED ? null : 'OG_ANCHOR_MASTER_SEED',
+      ].filter(Boolean)
       return {
         state: 'warn',
-        detail: 'OG_ANCHOR_ADDRESS unset — on-chain anchoring is wired to nothing',
+        detail: `${missing.join(' and ')} unset — snapshots stay off chain`,
       }
     }
 
@@ -239,7 +243,18 @@ async function main(): Promise<void> {
     if (code === '0x') {
       return { state: 'fail', detail: `no contract at ${config.OG_ANCHOR_ADDRESS} on this network` }
     }
-    return { state: 'ok', detail: `deployed at ${config.OG_ANCHOR_ADDRESS}` }
+    // The relayer pays for every anchor, so an empty one stops anchoring
+    // silently unless it is checked here.
+    const relayer = new ethers.Wallet(config.OG_STORAGE_PRIVATE_KEY)
+    const balance = await provider.getBalance(relayer.address)
+    if (balance < ethers.parseEther('0.01')) {
+      return {
+        state: 'fail',
+        detail: `contract is deployed, but relayer ${relayer.address} cannot pay for anchors`,
+      }
+    }
+
+    return { state: 'ok', detail: `deployed at ${config.OG_ANCHOR_ADDRESS}, relayer funded` }
   })
 
   await check('0G Storage indexer', true, async () => {

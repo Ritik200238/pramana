@@ -164,3 +164,42 @@ test('no request handler does a dynamic import', () => {
     assert.doesNotMatch(source, /await import\(/, `${file} imports lazily inside a handler`)
   }
 })
+
+test('the anchor worker is actually reachable from the server', () => {
+  // This is the test that was missing. `findPendingAnchors` and the
+  // anchor_tx_hash column existed from the beginning, the contract was written
+  // and tested to full coverage, and nothing ever called any of it — so every
+  // snapshot's pointer lived only in our database, which is the arrangement the
+  // contract exists to replace. A route or a job that nothing invokes is not a
+  // feature, and only a wiring test notices.
+  const worker = code(read('jobs', 'anchor.ts'))
+  assert.match(worker, /findPendingAnchors\s*\(/, 'the worker must read the pending queue')
+  assert.match(worker, /\.update\(snapshots\)/, 'and record the result, or it will loop forever')
+
+  const server = code(readFileSync(join(SRC, 'server.ts'), 'utf8'))
+  assert.match(server, /startAnchorWorker\s*\(/, 'the server must start the worker')
+  assert.match(
+    server,
+    /anchorWorker\?\.stop\(\)/,
+    'and stop it on close, or a timer outlives the process',
+  )
+})
+
+test('anchoring refuses to run half-configured', () => {
+  // An address without a seed cannot sign, and a seed without an address has
+  // nowhere to send it. Starting with one and not the other would produce an
+  // error per snapshot per pass, forever.
+  const server = code(readFileSync(join(SRC, 'server.ts'), 'utf8'))
+  assert.match(
+    server,
+    /OG_ANCHOR_ADDRESS && config\.OG_ANCHOR_MASTER_SEED/,
+    'both must be present before the worker starts',
+  )
+})
+
+test('the snapshot pointer is never anchored twice', () => {
+  const worker = code(read('jobs', 'anchor.ts'))
+  // The snapshot id is the nonce, so a transaction that succeeded but whose
+  // receipt was lost cannot be anchored again — the contract rejects the reuse.
+  assert.match(worker, /nonceUsed\s*\(/, 'a retry must check the chain before spending')
+})
