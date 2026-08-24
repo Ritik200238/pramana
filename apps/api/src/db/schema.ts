@@ -597,7 +597,18 @@ export const inferenceUsage = pgTable(
     model: text('model').notNull(),
     promptTokens: integer('prompt_tokens').notNull(),
     completionTokens: integer('completion_tokens').notNull(),
+    /**
+     * Local estimate, kept for continuity. `costNeuron` is what was charged.
+     */
     usd: numeric('usd', { precision: 12, scale: 8 }).notNull(),
+    /**
+     * Exact charge in neuron (1e18 = 1 0G), as reported by the Router.
+     *
+     * Text rather than numeric because these run to sixteen digits and are
+     * handled as BigInt; storing them as a float would lose precision in a
+     * number that is literally money.
+     */
+    costNeuron: text('cost_neuron'),
     failovers: integer('failovers').notNull().default(0),
 
     /** Verdict from the Router's synchronous TEE signature check. */

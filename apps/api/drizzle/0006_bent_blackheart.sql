@@ -1,0 +1,1 @@
+ALTER TABLE "inference_usage" ADD COLUMN "cost_neuron" text;

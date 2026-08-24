@@ -19,7 +19,7 @@
 
 import { eq } from 'drizzle-orm'
 import type OpenAI from 'openai'
-import { complete } from '@ogt/og'
+import { complete, type Usage } from '@ogt/og'
 import type { AttestationReceipt } from '@ogt/og'
 import type { Database } from '../db/index.ts'
 import { households, users } from '../db/schema.ts'
@@ -52,7 +52,8 @@ export interface SuggestResult {
   text: string
   model: string
   proteinLeftG: number
-  usage: { promptTokens: number; completionTokens: number; usd: number }
+  /** Imported rather than restated: a local copy is a copy that drifts. */
+  usage: Usage
   /** Proof of where this ran. Travels with whatever it produced. */
   attestation: AttestationReceipt
 }

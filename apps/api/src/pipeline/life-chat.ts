@@ -16,7 +16,7 @@
 
 import { z } from 'zod'
 import type OpenAI from 'openai'
-import { complete, stripFences } from '@ogt/og'
+import { complete, stripFences, type Usage } from '@ogt/og'
 import type { AttestationReceipt } from '@ogt/og'
 
 const FACT_KINDS = [
@@ -112,7 +112,8 @@ export interface ExtractResult {
   extraction: Extraction
   model: string
   failovers: number
-  usage: { promptTokens: number; completionTokens: number; usd: number }
+  /** Imported rather than restated: a local copy is a copy that drifts. */
+  usage: Usage
 }
 
 export async function extractFacts(opts: ExtractOptions): Promise<ExtractResult> {

@@ -22,7 +22,7 @@
 
 import { z } from 'zod'
 import type OpenAI from 'openai'
-import { complete, stripFences } from '@ogt/og'
+import { complete, stripFences, type Usage } from '@ogt/og'
 import type { AttestationReceipt } from '@ogt/og'
 
 const SYSTEM_PROMPT = `You read photographs of medical laboratory reports and extract the measured values. Indian lab formats are your main case: Dr Lal PathLabs, Thyrocare, Metropolis, SRL, Apollo, and hospital in-house labs.
@@ -116,7 +116,8 @@ export interface ReadLabReportResult {
   reading: LabReading
   model: string
   failovers: number
-  usage: { promptTokens: number; completionTokens: number; usd: number }
+  /** Imported rather than restated: a local copy is a copy that drifts. */
+  usage: Usage
 }
 
 export async function readLabReport(opts: ReadLabReportOptions): Promise<ReadLabReportResult> {

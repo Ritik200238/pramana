@@ -17,7 +17,7 @@
 
 import { z } from 'zod'
 import type OpenAI from 'openai'
-import { complete, stripFences } from '@ogt/og'
+import { complete, stripFences, type Usage } from '@ogt/og'
 import type { AttestationReceipt } from '@ogt/og'
 import type { Unknown, UnknownKind } from '@ogt/core'
 
@@ -152,7 +152,8 @@ export interface ReadMealResult {
   vision: VisionResult
   model: string
   failovers: number
-  usage: { promptTokens: number; completionTokens: number; usd: number }
+  /** Imported rather than restated: a local copy is a copy that drifts. */
+  usage: Usage
 }
 
 export async function readMeal(opts: ReadMealOptions): Promise<ReadMealResult> {

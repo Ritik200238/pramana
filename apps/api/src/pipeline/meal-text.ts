@@ -15,7 +15,7 @@
  */
 
 import type OpenAI from 'openai'
-import { complete, stripFences } from '@ogt/og'
+import { complete, stripFences, type Usage } from '@ogt/og'
 import type { AttestationReceipt } from '@ogt/og'
 import { VisionResultSchema, type VisionResult } from './meal-vision.ts'
 
@@ -115,7 +115,8 @@ export interface ReadTextResult {
   vision: VisionResult
   model: string
   failovers: number
-  usage: { promptTokens: number; completionTokens: number; usd: number }
+  /** Imported rather than restated: a local copy is a copy that drifts. */
+  usage: Usage
 }
 
 export async function readMealText(opts: ReadTextOptions): Promise<ReadTextResult> {
