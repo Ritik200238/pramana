@@ -132,6 +132,42 @@ describe('the offline queue', () => {
     expect(result).toEqual({ sent: 0, remaining: 2 })
   })
 
+  test('a replay carries the queued id as its idempotency key', async () => {
+    api.enqueue('/meals/commit', { meal: 'dinner' })
+
+    const calls = scriptFetch([200])
+    await api.flushQueue()
+
+    // The id was generated once, when the meal was logged, and does not change
+    // across replays — which is exactly what makes a lost response harmless
+    // instead of a duplicate dinner.
+    const headers = calls[0]!.init.headers as Record<string, string>
+    expect(headers['Idempotency-Key']).toMatch(/^[0-9a-f-]{36}$/)
+  })
+
+  test('the same key is reused when a replay is retried', async () => {
+    api.enqueue('/meals/commit', { meal: 'dinner' })
+
+    const first = scriptFetch([503])
+    await api.flushQueue()
+    const second = scriptFetch([200])
+    await api.flushQueue()
+
+    const keyOf = (c: { init: RequestInit }) =>
+      (c.init.headers as Record<string, string>)['Idempotency-Key']
+    // A new key on retry would defeat the whole mechanism.
+    expect(keyOf(second[0]!)).toBe(keyOf(first[0]!))
+  })
+
+  test('an in-flight duplicate is kept, not dropped', async () => {
+    api.enqueue('/meals/commit', { meal: 'dinner' })
+
+    // 409 says an identical replay is still being processed. Dropping it would
+    // discard a meal whose write may not have finished.
+    scriptFetch([409])
+    expect(await api.flushQueue()).toEqual({ sent: 0, remaining: 1 })
+  })
+
   test('a network error stops the drain without losing anything', async () => {
     api.enqueue('/meals/commit', { meal: 'dinner' })
 

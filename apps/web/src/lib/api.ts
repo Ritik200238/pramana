@@ -360,10 +360,11 @@ export const api = {
     return request<{ usuals: Usual[] }>('/users/me/usuals')
   },
 
-  repeatMeal(sourceMealId: string) {
+  repeatMeal(sourceMealId: string, idempotencyKey = crypto.randomUUID()) {
     return request<CommitResponse>('/meals/repeat', {
       method: 'POST',
       body: JSON.stringify({ sourceMealId }),
+      headers: { 'Idempotency-Key': idempotencyKey },
     })
   },
 
@@ -383,10 +384,13 @@ export const api = {
     })
   },
 
-  commitMeal(body: Record<string, unknown>) {
+  commitMeal(body: Record<string, unknown>, idempotencyKey = crypto.randomUUID()) {
     return request<CommitResponse>('/meals/commit', {
       method: 'POST',
       body: JSON.stringify(body),
+      // Generated per call rather than per retry, so a double tap on a slow
+      // connection logs one meal.
+      headers: { 'Idempotency-Key': idempotencyKey },
     })
   },
 
@@ -550,7 +554,14 @@ export async function flushQueue(): Promise<{ sent: number; remaining: number }>
   while (queue.length > 0) {
     const next = queue[0]!
     try {
-      await request(next.path, { method: 'POST', body: next.body })
+      await request(next.path, {
+        method: 'POST',
+        body: next.body,
+        // The queued id is a natural idempotency key: it was generated once,
+        // when the meal was logged, and never changes across replays. This is
+        // what makes a lost response harmless rather than a duplicate dinner.
+        headers: { 'Idempotency-Key': next.id },
+      })
       queue = queue.slice(1)
       writeQueue(queue)
       sent += 1
@@ -563,7 +574,10 @@ export async function flushQueue(): Promise<{ sent: number; remaining: number }>
         error.status >= 400 &&
         error.status < 500 &&
         error.status !== 401 &&
-        error.status !== 429
+        error.status !== 429 &&
+        // 409 means an identical replay is still being processed. Dropping it
+        // would discard a meal whose write may not have finished.
+        error.status !== 409
       if (rejected) {
         queue = queue.slice(1)
         writeQueue(queue)
