@@ -5,6 +5,8 @@ import {ERC721} from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import {EIP712} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
+import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 
 /**
  * @title IOracle
@@ -56,7 +58,7 @@ interface IOracle {
  *      commitments. Everything written on chain is permanent and public, so the
  *      only safe thing to write is a pointer to ciphertext.
  */
-contract CoachAgent is ERC721, AccessControl, Pausable {
+contract CoachAgent is ERC721, AccessControl, Pausable, EIP712 {
     bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
 
     /// @dev Bounds the authorisation loop so no caller can build an unbounded transaction.
@@ -121,8 +123,44 @@ contract CoachAgent is ERC721, AccessControl, Pausable {
     error ZeroAddress();
     error CannotAuthorizeOwner();
     error NoOracle();
+    error InvalidSignature();
+    error NonceAlreadyUsed(address owner, uint256 nonce);
+    error SignatureExpired(uint256 deadline);
 
-    constructor(address admin, address initialOracle) ERC721("It Asks Coach", "COACH") {
+    bytes32 private constant MINT_TYPEHASH = keccak256(
+        "MintCoach(bytes32 rootHash,bytes32 metadataHash,uint32 schemaVersion,uint256 nonce,uint256 deadline)"
+    );
+
+    bytes32 private constant EVOLVE_TYPEHASH = keccak256(
+        "Evolve(uint256 tokenId,bytes32 rootHash,bytes32 metadataHash,uint32 learnedCount,uint256 nonce,uint256 deadline)"
+    );
+
+    /// @dev owner => consumed nonces. A signature is good exactly once.
+    mapping(address owner => mapping(uint256 nonce => bool used)) private _usedNonces;
+
+    /// @notice Whether a relayed nonce has already been spent.
+    function nonceUsed(address owner, uint256 nonce) external view returns (bool) {
+        return _usedNonces[owner][nonce];
+    }
+
+    /// @dev Shared by both relayed entry points, so neither can forget a check.
+    function _consumeSignature(address owner, uint256 nonce, uint256 deadline, bytes32 structHash, bytes calldata signature)
+        private
+    {
+        // Deadlines here are minutes and a validator can move the clock by
+        // seconds, which cannot reach far enough to matter. Same comparison
+        // EIP-2612 permit uses.
+        // forge-lint: disable-next-line(block-timestamp)
+        if (block.timestamp > deadline) revert SignatureExpired(deadline);
+        if (_usedNonces[owner][nonce]) revert NonceAlreadyUsed(owner, nonce);
+        if (ECDSA.recover(_hashTypedDataV4(structHash), signature) != owner) revert InvalidSignature();
+        _usedNonces[owner][nonce] = true;
+    }
+
+    constructor(address admin, address initialOracle)
+        ERC721("It Asks Coach", "COACH")
+        EIP712("CoachAgent", "1")
+    {
         if (admin == address(0)) revert ZeroAddress();
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
         _grantRole(PAUSER_ROLE, admin);
@@ -147,11 +185,19 @@ contract CoachAgent is ERC721, AccessControl, Pausable {
         whenNotPaused
         returns (uint256 tokenId)
     {
+        return _mintCoach(msg.sender, rootHash, metadataHash, schemaVersion);
+    }
+
+    /// @dev The one place a coach is minted, so both entry points validate identically.
+    function _mintCoach(address owner, bytes32 rootHash, bytes32 metadataHash, uint32 schemaVersion)
+        private
+        returns (uint256 tokenId)
+    {
         if (rootHash == bytes32(0)) revert EmptyRootHash();
         if (metadataHash == bytes32(0)) revert EmptyMetadataHash();
 
         tokenId = _nextTokenId++;
-        _safeMint(msg.sender, tokenId);
+        _safeMint(owner, tokenId);
 
         _brains[tokenId].push(
             Brain({
@@ -163,7 +209,7 @@ contract CoachAgent is ERC721, AccessControl, Pausable {
             })
         );
 
-        emit CoachMinted(msg.sender, tokenId, rootHash, schemaVersion);
+        emit CoachMinted(owner, tokenId, rootHash, schemaVersion);
     }
 
     // ---------------------------------------------------------------- evolve
@@ -185,6 +231,14 @@ contract CoachAgent is ERC721, AccessControl, Pausable {
         returns (uint256 version)
     {
         _requireOwner(tokenId);
+        return _evolve(tokenId, rootHash, metadataHash, learnedCount);
+    }
+
+    /// @dev The one place a brain version is appended.
+    function _evolve(uint256 tokenId, bytes32 rootHash, bytes32 metadataHash, uint32 learnedCount)
+        private
+        returns (uint256 version)
+    {
         if (rootHash == bytes32(0)) revert EmptyRootHash();
         if (metadataHash == bytes32(0)) revert EmptyMetadataHash();
 
@@ -203,6 +257,72 @@ contract CoachAgent is ERC721, AccessControl, Pausable {
         );
 
         emit BrainEvolved(tokenId, version, rootHash, learnedCount);
+    }
+
+    /**
+     * @notice Mint a coach for an owner who signed for it, paid for by anyone.
+     *
+     * @dev The same reasoning as HealthRecordAnchor's relayed anchor. A person
+     *      who signs in with a phone number holds no wallet and cannot fund an
+     *      address, so requiring them to send this transaction meant nobody
+     *      could own a coach at all — which made the ownership claim decorative.
+     *
+     *      The coach is minted to `owner` and to nobody else. A relayer may
+     *      decline to submit; that is the whole of its authority.
+     */
+    function mintCoachFor(
+        address owner,
+        bytes32 rootHash,
+        bytes32 metadataHash,
+        uint32 schemaVersion,
+        uint256 nonce,
+        uint256 deadline,
+        bytes calldata signature
+    ) external whenNotPaused returns (uint256 tokenId) {
+        _consumeSignature(
+            owner,
+            nonce,
+            deadline,
+            keccak256(
+                abi.encode(MINT_TYPEHASH, rootHash, metadataHash, schemaVersion, nonce, deadline)
+            ),
+            signature
+        );
+
+        return _mintCoach(owner, rootHash, metadataHash, schemaVersion);
+    }
+
+    /**
+     * @notice Record a new brain version on behalf of the coach's owner.
+     *
+     * @dev Ownership is still checked against `owner`, so a signature from
+     *      somebody who has since transferred the coach away cannot evolve it.
+     */
+    function evolveFor(
+        address owner,
+        uint256 tokenId,
+        bytes32 rootHash,
+        bytes32 metadataHash,
+        uint32 learnedCount,
+        uint256 nonce,
+        uint256 deadline,
+        bytes calldata signature
+    ) external whenNotPaused returns (uint256 version) {
+        if (_ownerOf(tokenId) != owner) revert NotOwner(tokenId, owner);
+
+        _consumeSignature(
+            owner,
+            nonce,
+            deadline,
+            keccak256(
+                abi.encode(
+                    EVOLVE_TYPEHASH, tokenId, rootHash, metadataHash, learnedCount, nonce, deadline
+                )
+            ),
+            signature
+        );
+
+        return _evolve(tokenId, rootHash, metadataHash, learnedCount);
     }
 
     // -------------------------------------------------------------- transfer
