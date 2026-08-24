@@ -71,12 +71,22 @@ test('the meal route screens the free-text note before reading the photo', () =>
   assert.ok(guardAt > -1 && guardAt < readAt, 'the note must be screened before the model runs')
 })
 
-test('onboarding screens the profile before creating a user', () => {
+test('onboarding screens the profile before writing it', () => {
   const source = read('users.ts')
   const guardAt = source.indexOf('guardProfile(')
-  const insertAt = source.indexOf('.insert(users)')
+  const writeAt = source.indexOf('.update(users)')
   assert.ok(guardAt > -1, 'onboarding must screen the profile')
-  assert.ok(guardAt < insertAt, 'a refused profile must not create a user row')
+  assert.ok(writeAt > -1, 'onboarding must persist the profile')
+  assert.ok(guardAt < writeAt, 'a refused profile must not be stored')
+
+  // Stronger than ordering: there must be no way to mint a user here at all.
+  // The row exists because someone proved they own a phone number, and a second
+  // creation path would produce rows nobody can ever sign in to.
+  assert.equal(
+    source.includes('.insert(users)'),
+    false,
+    'profile routes must never create a user; only auth may',
+  )
 })
 
 test('a blocked response carries a helpline for self-harm and ED signals', () => {

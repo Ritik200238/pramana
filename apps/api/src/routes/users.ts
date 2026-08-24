@@ -35,8 +35,16 @@ export interface UserRouteDeps {
 }
 
 export async function registerUserRoutes(app: FastifyInstance, deps: UserRouteDeps): Promise<void> {
-  /** Create a user and return their targets. Refuses if the profile fails the gate. */
-  app.post('/users', async (request, reply) => {
+  /**
+   * Fill in the profile of the signed-in user and return their targets.
+   *
+   * This does not create a user. The user row already exists — it was created
+   * when they proved they own the phone number. A second creation path here
+   * would mint rows nobody can ever sign in to, and would let an unauthenticated
+   * caller grow the table at will.
+   */
+  app.post('/users/me/profile', async (request, reply) => {
+    const userId = currentUserId(request)
     const body = ProfileBody.parse(request.body)
 
     const profile = {
@@ -49,23 +57,33 @@ export async function registerUserRoutes(app: FastifyInstance, deps: UserRouteDe
       ...(body.paceKgPerWeek ? { paceKgPerWeek: body.paceKgPerWeek } : {}),
     }
 
-    // The profile gate runs before a user row exists. A minor or an underweight
-    // cut request must be refused at the door, not after we have their data.
-    const gate = await guardProfile(deps.db, null, profile, 'onboarding')
+    // The gate runs before anything is written. A minor, or an underweight cut
+    // request, is refused at the door rather than after we have stored it.
+    const gate = await guardProfile(deps.db, userId, profile, 'onboarding')
     if (gate.blocked) return reply.status(200).send(blockedResponse(gate.verdict))
 
     const targets = computeTargets(profile)
 
-    const created = await deps.db.transaction(async (tx) => {
-      let householdId = body.householdId
+    const saved = await deps.db.transaction(async (tx) => {
+      const [existing] = await tx
+        .select({ id: users.id, householdId: users.householdId })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1)
+
+      if (!existing) throw new Error('Authenticated user has no row')
+
+      // Everyone gets a household. It is what later makes a family plan a
+      // change of scope rather than a migration.
+      let householdId: string | undefined = existing.householdId ?? body.householdId
       if (!householdId) {
         const [household] = await tx.insert(households).values({}).returning({ id: households.id })
         householdId = household?.id
       }
 
-      const [user] = await tx
-        .insert(users)
-        .values({
+      await tx
+        .update(users)
+        .set({
           ...(householdId ? { householdId } : {}),
           ...(body.displayName ? { displayName: body.displayName } : {}),
           sex: body.sex,
@@ -76,18 +94,17 @@ export async function registerUserRoutes(app: FastifyInstance, deps: UserRouteDe
           ...(body.paceKgPerWeek ? { paceKgPerWeek: body.paceKgPerWeek } : {}),
           diet: body.diet,
           cooks: body.cooks,
+          updatedAt: new Date(),
         })
-        .returning({ id: users.id, householdId: users.householdId })
+        .where(eq(users.id, userId))
 
-      if (!user) throw new Error('Failed to create user')
-
-      await tx.insert(weightLogs).values({ userId: user.id, weightKg: body.weightKg })
-      return user
+      await tx.insert(weightLogs).values({ userId, weightKg: body.weightKg })
+      return { householdId }
     })
 
-    return reply.status(201).send({
-      userId: created.id,
-      householdId: created.householdId,
+    return reply.status(200).send({
+      userId,
+      householdId: saved.householdId,
       targets,
       // Clamping is always disclosed. Silently lowering someone's requested
       // pace and not saying so is how an app loses the right to be trusted.
@@ -96,7 +113,7 @@ export async function registerUserRoutes(app: FastifyInstance, deps: UserRouteDe
   })
 
   /** Current targets, recomputed from the latest weight. */
-  app.get('/users/:userId/targets', async (request, reply) => {
+  app.get('/users/me/targets', async (request, reply) => {
     const userId = currentUserId(request)
 
     const [user] = await deps.db.select().from(users).where(eq(users.id, userId)).limit(1)
@@ -126,7 +143,7 @@ export async function registerUserRoutes(app: FastifyInstance, deps: UserRouteDe
     return reply.status(200).send({ targets, notes: targets.safetyNotes })
   })
 
-  app.post('/users/:userId/weight', async (request, reply) => {
+  app.post('/users/me/weight', async (request, reply) => {
     const userId = currentUserId(request)
     const { weightKg } = z.object({ weightKg: z.number().min(20).max(400) }).parse(request.body)
 
@@ -135,7 +152,7 @@ export async function registerUserRoutes(app: FastifyInstance, deps: UserRouteDe
   })
 
   /** Tone. Never sycophantic at any setting — this only changes how blunt it is. */
-  app.patch('/users/:userId/tone', async (request, reply) => {
+  app.patch('/users/me/tone', async (request, reply) => {
     const userId = currentUserId(request)
     const { tone } = z.object({ tone: z.enum(['gentle', 'straight', 'blunt']) }).parse(request.body)
 
@@ -144,7 +161,7 @@ export async function registerUserRoutes(app: FastifyInstance, deps: UserRouteDe
   })
 
   /** One tap, obeyed permanently. No re-prompt, ever. */
-  app.post('/users/:userId/ask-me-less', async (request, reply) => {
+  app.post('/users/me/ask-me-less', async (request, reply) => {
     const userId = currentUserId(request)
     await deps.db
       .update(users)
