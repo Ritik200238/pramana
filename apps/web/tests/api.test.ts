@@ -381,3 +381,77 @@ describe('shared shapes are not copied', () => {
     expect(source).not.toMatch(/export type Confidence =/)
   })
 })
+
+describe('a device that changes hands', () => {
+  /*
+   * The service worker caches read responses for a day, keyed by URL. Every
+   * person reads the same paths, so a response cached for one is a response
+   * that can be served to the next — and on a shared phone, which is the
+   * ordinary case in this market, that is one person's health record answering
+   * somebody else's request whenever the network is slow enough for the cache
+   * to win.
+   *
+   * Expiry does not help: the window is a day and a phone changes hands in a
+   * minute. The cache has to be emptied when a session ends.
+   */
+  function fakeCaches() {
+    const deleted: string[] = []
+    vi.stubGlobal('caches', {
+      keys: async () => ['api-reads', 'workbox-precache-v2', 'other'],
+      delete: async (name: string) => {
+        deleted.push(name)
+        return true
+      },
+    })
+    return deleted
+  }
+
+  test('signing out empties the cached reads', async () => {
+    const deleted = fakeCaches()
+    scriptFetch([200])
+
+    await api.api.signOut()
+
+    expect(deleted).toContain('api-reads')
+  })
+
+  test('a sign-out that fails still empties them', async () => {
+    const deleted = fakeCaches()
+    scriptFetch([500])
+
+    // A failed sign-out leaving one person's data readable by the next is the
+    // worst outcome here, so the cache goes regardless.
+    await expect(api.api.signOut()).rejects.toBeDefined()
+    expect(deleted).toContain('api-reads')
+  })
+
+  test('an expired session empties them too', async () => {
+    const deleted = fakeCaches()
+    scriptFetch([401])
+
+    await expect(api.api.today()).rejects.toMatchObject({ status: 401 })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(deleted).toContain('api-reads')
+  })
+
+  test('the precache is left alone', async () => {
+    const deleted = fakeCaches()
+    scriptFetch([200])
+
+    await api.api.signOut()
+
+    // Clearing the app shell would make the next launch a blank screen on a bad
+    // connection, and it holds nobody's data.
+    expect(deleted).not.toContain('workbox-precache-v2')
+  })
+
+  test('a browser without Cache Storage still signs out', async () => {
+    vi.stubGlobal('caches', undefined)
+    scriptFetch([200])
+
+    // Private mode, an old browser, a locked-down profile. None of them may
+    // stop somebody signing out.
+    await expect(api.api.signOut()).resolves.toBeUndefined()
+  })
+})

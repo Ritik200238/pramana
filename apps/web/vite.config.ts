@@ -45,13 +45,32 @@ export default defineConfig({
         navigateFallback: '/index.html',
         runtimeCaching: [
           {
-            // Reads may serve stale briefly; a day's totals a few seconds old
-            // is better than a spinner on a train.
-            urlPattern: /\/api\/(users|chat\/history)/,
+            /*
+             * Reads may serve stale briefly; a day's totals a few seconds old
+             * beats a spinner on a train.
+             *
+             * The pattern is an explicit list rather than /api/users, which
+             * matched far more than intended — including /users/me/export, the
+             * entire health record and, when asked for, the key to it. A
+             * response cached here sits in the browser for a day.
+             *
+             * Nothing here is scoped to a person, because the cache is keyed by
+             * URL and every user reads the same paths. That is only safe
+             * because the client empties this cache on sign-out and whenever a
+             * session ends — see clearCachedReads in lib/api.ts. On a shared
+             * phone, which is the normal case in this market, the alternative
+             * is one person's records answering another person's request while
+             * the network is slow.
+             */
+            urlPattern:
+              /\/api\/(users\/me\/(today|usuals|streak|foods|markers)|chat\/history)(\?|$)/,
             handler: 'NetworkFirst',
             options: {
               cacheName: 'api-reads',
               networkTimeoutSeconds: 3,
+              // A day of staleness is fine for totals. It is not fine for a
+              // device that has changed hands, which is why the cache is
+              // cleared rather than merely expired.
               expiration: { maxEntries: 60, maxAgeSeconds: 60 * 60 * 24 },
             },
           },

@@ -266,6 +266,31 @@ export function storeToken(token: string): void {
   }
 }
 
+/**
+ * Empty the service worker's cache of read responses.
+ *
+ * The cache is keyed by URL, and every person reads the same paths — so a
+ * response cached for one is a response that can be served to the next. On a
+ * shared phone, which is the ordinary case in this market, that is one person's
+ * health record answering another person's request whenever the network is slow
+ * enough for the cache to win.
+ *
+ * Expiry alone does not solve it: the window is a day, and a phone can change
+ * hands in a minute. So it is emptied whenever a session ends, by any route.
+ *
+ * Best effort by design. A browser with no Cache Storage, or one that refuses,
+ * must not stop somebody signing out.
+ */
+export async function clearCachedReads(): Promise<void> {
+  try {
+    if (typeof caches === 'undefined') return
+    const names = await caches.keys()
+    await Promise.all(names.filter((name) => name.includes('api')).map((name) => caches.delete(name)))
+  } catch {
+    // Nothing useful to do. The token is gone either way.
+  }
+}
+
 export function clearToken(): void {
   try {
     localStorage.removeItem(TOKEN_KEY)
@@ -291,6 +316,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
   if (response.status === 401) {
     clearToken()
+    // The session is over, so the cached answers belong to nobody now.
+    void clearCachedReads()
     window.dispatchEvent(new CustomEvent(SESSION_EXPIRED))
     throw new ApiError('Your session has ended. Please sign in again.', 401)
   }
@@ -357,6 +384,8 @@ export const api = {
       await request<{ signedOut: true }>('/auth/signout', { method: 'POST' })
     } finally {
       clearToken()
+      // Before the next person signs in on this device.
+      await clearCachedReads()
     }
   },
 
