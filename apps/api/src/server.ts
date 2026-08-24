@@ -25,6 +25,7 @@ import { registerDayRoutes } from './routes/day.ts'
 import { registerCoachRoutes } from './routes/coach.ts'
 import { startScheduler } from './jobs/scheduler.ts'
 import { authPlugin } from './plugins/auth.ts'
+import { idempotencyPlugin } from './plugins/idempotency.ts'
 import { ipLimitsPlugin, userLimitsPlugin } from './plugins/limits.ts'
 import { registerAuthRoutes } from './routes/auth.ts'
 
@@ -118,6 +119,9 @@ export async function buildServer(overrides: ServerOverrides = {}) {
   await app.register(userLimitsPlugin, {
     isProduction: config.NODE_ENV === 'production',
   })
+
+  // After the limiter, so a replayed write cannot be used to spend past it.
+  await app.register(idempotencyPlugin, { db })
   const openai = overrides.openai ?? createClient({ apiKey: config.OG_ROUTER_API_KEY })
   const storage =
     overrides.storage ??

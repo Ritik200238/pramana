@@ -98,6 +98,48 @@ export const otpChallenges = pgTable(
 )
 
 /**
+ * Idempotency records.
+ *
+ * The client queues meals while offline and replays them when the signal comes
+ * back. A replay that the server has already applied — the response was lost,
+ * not the request — must not log the same dinner twice, because the person
+ * cannot tell the difference between a duplicate and a mistake they made, and
+ * a food log they do not trust is one they stop opening.
+ *
+ * The key is scoped to a user. Two people cannot collide, and neither can one
+ * person read back another's response by guessing a key.
+ *
+ * `completedAt` being null means a request with this key is in flight. That
+ * distinction is what makes two simultaneous replays safe: the second is told
+ * to retry rather than being allowed to run the same write concurrently.
+ */
+export const idempotencyKeys = pgTable(
+  'idempotency_keys',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** Client-supplied. Unique per user, not globally. */
+    key: text('key').notNull(),
+    /** Method and route pattern, so one key cannot be reused across endpoints. */
+    endpoint: text('endpoint').notNull(),
+    /** Hash of the body, to catch a key reused with different content. */
+    requestHash: text('request_hash').notNull(),
+    statusCode: integer('status_code'),
+    responseBody: jsonb('response_body'),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    // The constraint is the mechanism, not an optimisation: it is what makes
+    // two concurrent replays resolve to one winner.
+    uniqueIndex('idempotency_user_key_idx').on(table.userId, table.key),
+    index('idempotency_created_idx').on(table.createdAt),
+  ],
+)
+
+/**
  * Sessions.
  *
  * Opaque random tokens, stored hashed, rather than JWTs. Two reasons, and both

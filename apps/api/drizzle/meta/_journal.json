@@ -29,6 +29,13 @@
       "when": 1787592301669,
       "tag": "0003_mysterious_bishop",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1787594776491,
+      "tag": "0004_loving_zombie",
+      "breakpoints": true
     }
   ]
 }
