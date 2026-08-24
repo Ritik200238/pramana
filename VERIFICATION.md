@@ -19,7 +19,7 @@ Last updated: 2026-08-24.
 |---|---|---|
 | `@ogt/core` — targets, safety, questions | 45 | `npm test -w @ogt/core` |
 | `@ogt/og` — router, storage, payments | 38 | `npm test -w @ogt/og` |
-| `@ogt/api` — services, routes, wiring | 116 | `npm test -w @ogt/api` |
+| `@ogt/api` — services, routes, wiring | 121 | `npm test -w @ogt/api` |
 | `@ogt/api` — end-to-end, idempotency, delivery | 30 | included above |
 | `@ogt/web` — client and offline queue | 16 | `npm test -w @ogt/web` |
 | `contracts` — Foundry | 108 | `forge test` in `packages/contracts` |
@@ -165,11 +165,24 @@ set `OG_ANCHOR_ADDRESS` plus `OG_ANCHOR_MASTER_SEED`.
 
 ### 0G Storage round trip
 
-**Status: not run against live storage.** Upload and download are covered by
-unit tests against the SDK's types, not against a live indexer. The fragmented
-upload path in particular has never moved real bytes.
+**Status: not run against live storage — and, until this session, unreachable
+for a second reason.**
 
-**To close it:** a funded `OG_STORAGE_PRIVATE_KEY` and a live indexer endpoint.
+This gap was reported for weeks as waiting on a funded key. That was not the
+whole story. `users.record_pub_key` was never written by anything, and the
+snapshot query filtered `WHERE record_pub_key IS NOT NULL`, so it matched no
+rows for any user. With a fully funded key, nothing would have uploaded.
+
+That is fixed: the key is derived on demand, the queries no longer filter on it,
+and an unconfigured master seed is an error in the log rather than an empty
+queue. A freshly onboarded user is now provably snapshot-eligible, asserted
+end to end against a real database.
+
+What remains is genuinely the credential: upload and download are covered
+against the SDK's types, not a live indexer, and the fragmented upload path has
+never moved real bytes.
+
+**To close it:** a funded `OG_STORAGE_PRIVATE_KEY` and `OG_ANCHOR_MASTER_SEED`.
 
 ### SMS delivery
 
@@ -288,7 +301,7 @@ supplies it.
 
 ```bash
 npm install
-npm test --workspaces                      # 251 tests, no network required
+npm test --workspaces                      # 256 tests, no network required
 npm run test:live -w @ogt/og               # 6 live checks; 4 more with a key
 cd packages/contracts && forge test        # 108 tests
 bash script/verify-fork.sh                 # deploy + exercise on forked Galileo
