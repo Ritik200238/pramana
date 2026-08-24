@@ -1,10 +1,19 @@
 /**
- * API client with an offline queue.
+ * API client.
  *
- * A dropped meal log is a dropped habit. Indian mobile networks are not
- * reliable, so a log taken offline is queued and replayed rather than lost —
- * the user should never be told "try again" for something they already did.
+ * Two properties this file is responsible for:
+ *
+ *   1. **Identity is never an argument.** The server derives the user from the
+ *      session on every request. A client method taking a `userId` would
+ *      re-create the vulnerability the backend just closed, so none of them do
+ *      — the paths carry `me` rather than an id.
+ *
+ *   2. **A dropped log is a dropped habit.** Indian mobile networks are not
+ *      reliable, so writes taken offline are queued and replayed. The person is
+ *      told their meal is saved, never asked to retry something they already did.
  */
+
+// ------------------------------------------------------------------- types
 
 export interface Targets {
   bmr: number
@@ -75,6 +84,7 @@ export interface CommitResponse {
   totals: { kcal: number; proteinG: number; carbG: number; fatG: number }
   confidence: Confidence
   questionsAsked: number
+  streakDays?: number
 }
 
 export interface ChatResponse {
@@ -82,40 +92,6 @@ export interface ChatResponse {
   understood: Array<{ kind: string; verbatim: string; value: number | null; unit: string | null }>
   mentionsFood: boolean
   notice?: string
-}
-
-const BASE = '/api'
-
-export class ApiError extends Error {
-  readonly status: number
-
-  constructor(message: string, status: number) {
-    super(message)
-    this.name = 'ApiError'
-    this.status = status
-  }
-}
-
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${BASE}${path}`, {
-    ...init,
-    headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
-  })
-
-  if (!response.ok) {
-    const detail = await response.text().catch(() => '')
-    throw new ApiError(detail || response.statusText, response.status)
-  }
-
-  return (await response.json()) as T
-}
-
-export function isBlocked(value: unknown): value is BlockedResponse {
-  return typeof value === 'object' && value !== null && 'blocked' in value
-}
-
-export function isNotFood(value: unknown): value is NotFoodResponse {
-  return typeof value === 'object' && value !== null && 'notFood' in value
 }
 
 export interface DaySummary {
@@ -136,7 +112,13 @@ export interface DaySummary {
     confidence: Confidence
     source: string
     questionsAsked: number
-    items: Array<{ name: string; portionLabel: string; kcal: number; proteinG: number; confidence: Confidence }>
+    items: Array<{
+      name: string
+      portionLabel: string
+      kcal: number
+      proteinG: number
+      confidence: Confidence
+    }>
   }>
   questionsPerMeal: number
 }
@@ -157,8 +139,6 @@ export interface ProactiveMessage {
   text: string
   factId?: string
 }
-
-const OFFSET = -new Date().getTimezoneOffset()
 
 export interface StreakState {
   currentDays: number
@@ -198,112 +178,208 @@ export interface ReportResult {
   }>
 }
 
+export interface Me {
+  user: {
+    id: string
+    phone: string | null
+    displayName: string | null
+    sex: 'male' | 'female' | null
+    ageYears: number | null
+    heightCm: number | null
+    goal: string | null
+    diet: string | null
+    cooks: string | null
+    tone: string
+  }
+  onboarded: boolean
+}
+
+export interface ProofReceipt {
+  task: string
+  model: string
+  attestation: 'verified' | 'failed' | 'unrequested' | 'unavailable'
+  provider: string | null
+  requestId: string | null
+  createdAt: string
+  explorer: string | null
+}
+
+// ---------------------------------------------------------------- transport
+
+const BASE = '/api'
+const TOKEN_KEY = 'ogt.token'
+const OFFSET = -new Date().getTimezoneOffset()
+
+export class ApiError extends Error {
+  readonly status: number
+
+  constructor(message: string, status: number) {
+    super(message)
+    this.name = 'ApiError'
+    this.status = status
+  }
+}
+
+/** Fired when the server says the session is gone, so the shell reacts once. */
+export const SESSION_EXPIRED = 'ogt:session-expired'
+
+function readToken(): string | null {
+  try {
+    return localStorage.getItem(TOKEN_KEY)
+  } catch {
+    // Private mode or blocked storage. The httpOnly cookie still carries the
+    // session, so this is degraded rather than broken.
+    return null
+  }
+}
+
+export function storeToken(token: string): void {
+  try {
+    localStorage.setItem(TOKEN_KEY, token)
+  } catch {
+    // See above — the cookie is the primary carrier.
+  }
+}
+
+export function clearToken(): void {
+  try {
+    localStorage.removeItem(TOKEN_KEY)
+  } catch {
+    // Nothing useful to do here.
+  }
+}
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const token = readToken()
+
+  const response = await fetch(`${BASE}${path}`, {
+    ...init,
+    // Send the session cookie; the bearer header is the fallback for clients
+    // where a cookie is unavailable.
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(init?.headers ?? {}),
+    },
+  })
+
+  if (response.status === 401) {
+    clearToken()
+    window.dispatchEvent(new CustomEvent(SESSION_EXPIRED))
+    throw new ApiError('Your session has ended. Please sign in again.', 401)
+  }
+
+  if (!response.ok) {
+    const detail = await response.text().catch(() => '')
+    throw new ApiError(detail || response.statusText, response.status)
+  }
+
+  return (await response.json()) as T
+}
+
+export function isBlocked(value: unknown): value is BlockedResponse {
+  return typeof value === 'object' && value !== null && 'blocked' in value
+}
+
+export function isNotFood(value: unknown): value is NotFoodResponse {
+  return typeof value === 'object' && value !== null && 'notFood' in value
+}
+
+// --------------------------------------------------------------------- api
+
 export const api = {
-  suggest(userId: string, available?: string) {
-    return request<{ suggestion: string; proteinLeftG: number } | BlockedResponse>(
-      `/users/${userId}/suggest`,
-      {
-        method: 'POST',
-        body: JSON.stringify({ available, utcOffsetMinutes: OFFSET }),
-      },
+  // ---- auth ----
+
+  requestCode(phone: string) {
+    return request<{ sent: true; expiresInSeconds: number; devCode?: string }>(
+      '/auth/request-code',
+      { method: 'POST', body: JSON.stringify({ phone }) },
     )
   },
 
-  dayLine(userId: string) {
-    return request<{ line: string; streak: StreakState }>(
-      `/users/${userId}/day-line?utcOffsetMinutes=${OFFSET}`,
+  async verifyCode(phone: string, code: string) {
+    const result = await request<{ token: string; expiresAt: string; isNewUser: boolean }>(
+      '/auth/verify',
+      { method: 'POST', body: JSON.stringify({ phone, code }) },
     )
+    storeToken(result.token)
+    return result
   },
 
-  weekly(userId: string) {
-    return request<{ review: string | null; message?: string; facts: unknown }>(
-      `/users/${userId}/weekly?utcOffsetMinutes=${OFFSET}`,
-    )
+  me() {
+    return request<Me>('/auth/me')
   },
 
-  ask(userId: string, question: string, days = 14) {
-    return request<{ answer: string; notice?: string } | BlockedResponse>(
-      `/users/${userId}/ask`,
-      {
-        method: 'POST',
-        body: JSON.stringify({ question, days, utcOffsetMinutes: OFFSET }),
-      },
-    )
+  async signOut() {
+    try {
+      await request<{ signedOut: true }>('/auth/signout', { method: 'POST' })
+    } finally {
+      clearToken()
+    }
   },
 
-  streak(userId: string) {
-    return request<StreakState>(`/users/${userId}/streak?utcOffsetMinutes=${OFFSET}`)
-  },
+  // ---- profile ----
 
-  uploadReport(userId: string, imageUrl: string) {
-    return request<ReportResult>(`/users/${userId}/reports`, {
-      method: 'POST',
-      body: JSON.stringify({ imageUrl }),
-    })
-  },
-
-  markers(userId: string, code?: string) {
-    return request<{ series: MarkerSeries[] }>(
-      `/users/${userId}/markers${code ? `?code=${encodeURIComponent(code)}` : ''}`,
-    )
-  },
-
-  setPantry(userId: string, items: string[]) {
-    return request<{ items: string[] } | BlockedResponse>(`/users/${userId}/pantry`, {
-      method: 'PUT',
-      body: JSON.stringify({ items }),
-    })
-  },
-
-  today(userId: string) {
-    return request<DaySummary>(`/users/${userId}/today?utcOffsetMinutes=${OFFSET}`)
-  },
-
-  usuals(userId: string) {
-    return request<{ usuals: Usual[] }>(`/users/${userId}/usuals`)
-  },
-
-  repeatMeal(userId: string, sourceMealId: string) {
-    return request<{ mealId: string; kcal: number; proteinG: number; confidence: Confidence }>(
-      '/meals/repeat',
-      { method: 'POST', body: JSON.stringify({ userId, sourceMealId }) },
-    )
-  },
-
-  draftMealText(userId: string, text: string) {
-    return request<DraftResponse | NotFoodResponse | BlockedResponse>('/meals/draft-text', {
-      method: 'POST',
-      body: JSON.stringify({ userId, text }),
-    })
-  },
-
-  proactive(userId: string) {
-    return request<{ message: ProactiveMessage | null }>(
-      `/users/${userId}/proactive?utcOffsetMinutes=${OFFSET}`,
-    )
-  },
-
-  resolveFact(userId: string, factId: string) {
-    return request<{ resolved: true }>(`/users/${userId}/facts/${factId}/resolve`, {
-      method: 'POST',
-    })
-  },
-
-  createUser(body: Record<string, unknown>) {
+  /**
+   * Fill in the profile of the signed-in user. Not a create — the user row
+   * already exists from sign-in, so identity is never a body field.
+   */
+  createProfile(body: Record<string, unknown>) {
     return request<{ userId: string; targets: Targets; notes: string[] } | BlockedResponse>(
-      '/users',
+      '/users/me/profile',
       { method: 'POST', body: JSON.stringify(body) },
     )
   },
 
-  targets(userId: string) {
-    return request<{ targets: Targets; notes: string[] }>(`/users/${userId}/targets`)
+  logWeight(weightKg: number) {
+    return request<{ ok: true }>('/users/me/weight', {
+      method: 'POST',
+      body: JSON.stringify({ weightKg }),
+    })
   },
 
-  draftMeal(userId: string, imageUrl: string, note?: string) {
+  setTone(tone: 'gentle' | 'straight' | 'blunt') {
+    return request<{ tone: string }>('/users/me/tone', {
+      method: 'PATCH',
+      body: JSON.stringify({ tone }),
+    })
+  },
+
+  askMeLess() {
+    return request<{ proactiveOptOut: true }>('/users/me/ask-me-less', { method: 'POST' })
+  },
+
+  // ---- the day ----
+
+  today() {
+    return request<DaySummary>(`/users/me/today?utcOffsetMinutes=${OFFSET}`)
+  },
+
+  usuals() {
+    return request<{ usuals: Usual[] }>('/users/me/usuals')
+  },
+
+  repeatMeal(sourceMealId: string) {
+    return request<CommitResponse>('/meals/repeat', {
+      method: 'POST',
+      body: JSON.stringify({ sourceMealId }),
+    })
+  },
+
+  // ---- logging ----
+
+  draftMeal(imageUrl: string, note?: string) {
     return request<DraftResponse | NotFoodResponse | BlockedResponse>('/meals/draft', {
       method: 'POST',
-      body: JSON.stringify({ userId, imageUrl, ...(note ? { note } : {}) }),
+      body: JSON.stringify({ imageUrl, ...(note ? { note } : {}) }),
+    })
+  },
+
+  draftMealText(text: string) {
+    return request<DraftResponse | NotFoodResponse | BlockedResponse>('/meals/draft-text', {
+      method: 'POST',
+      body: JSON.stringify({ text }),
     })
   },
 
@@ -314,28 +390,105 @@ export const api = {
     })
   },
 
-  chat(userId: string, message: string) {
-    return request<ChatResponse | BlockedResponse>('/chat', {
-      method: 'POST',
-      body: JSON.stringify({ userId, message }),
-    })
-  },
-
-  history(userId: string) {
-    return request<{ messages: Array<{ role: string; content: string; createdAt: string }> }>(
-      `/chat/history?userId=${userId}`,
+  correctItem(
+    mealId: string,
+    itemId: string,
+    changes: { units?: number; cookingFat?: string; cookingFatTsp?: number; name?: string },
+  ) {
+    return request<{ totals: DaySummary['totals']; learned: boolean }>(
+      `/meals/${mealId}/items/${itemId}`,
+      { method: 'PATCH', body: JSON.stringify(changes) },
     )
   },
 
-  logWeight(userId: string, weightKg: number) {
-    return request<{ ok: true }>(`/users/${userId}/weight`, {
+  // ---- coach ----
+
+  chat(message: string) {
+    return request<ChatResponse | BlockedResponse>('/chat', {
       method: 'POST',
-      body: JSON.stringify({ weightKg }),
+      body: JSON.stringify({ message }),
     })
   },
 
-  exportUrl(userId: string) {
-    return `${BASE}/users/${userId}/export`
+  history() {
+    return request<{ messages: Array<{ role: string; content: string; createdAt: string }> }>(
+      '/chat/history',
+    )
+  },
+
+  suggest(available?: string) {
+    return request<{ suggestion: string; proteinLeftG: number } | BlockedResponse>(
+      '/users/me/suggest',
+      { method: 'POST', body: JSON.stringify({ available, utcOffsetMinutes: OFFSET }) },
+    )
+  },
+
+  dayLine() {
+    return request<{ line: string; streak: StreakState }>(
+      `/users/me/day-line?utcOffsetMinutes=${OFFSET}`,
+    )
+  },
+
+  weekly() {
+    return request<{ review: string | null; message?: string; facts: unknown }>(
+      `/users/me/weekly?utcOffsetMinutes=${OFFSET}`,
+    )
+  },
+
+  ask(question: string, days = 14) {
+    return request<{ answer: string; notice?: string } | BlockedResponse>('/users/me/ask', {
+      method: 'POST',
+      body: JSON.stringify({ question, days, utcOffsetMinutes: OFFSET }),
+    })
+  },
+
+  streak() {
+    return request<StreakState>(`/users/me/streak?utcOffsetMinutes=${OFFSET}`)
+  },
+
+  proactive() {
+    return request<{ message: ProactiveMessage | null }>(
+      `/users/me/proactive?utcOffsetMinutes=${OFFSET}`,
+    )
+  },
+
+  resolveFact(factId: string) {
+    return request<{ resolved: true }>(`/users/me/facts/${factId}/resolve`, { method: 'POST' })
+  },
+
+  // ---- reports ----
+
+  uploadReport(imageUrl: string) {
+    return request<ReportResult>('/users/me/reports', {
+      method: 'POST',
+      body: JSON.stringify({ imageUrl }),
+    })
+  },
+
+  markers(code?: string) {
+    return request<{ series: MarkerSeries[] }>(
+      `/users/me/markers${code ? `?code=${encodeURIComponent(code)}` : ''}`,
+    )
+  },
+
+  setPantry(items: string[]) {
+    return request<{ items: string[] } | BlockedResponse>('/users/me/pantry', {
+      method: 'PUT',
+      body: JSON.stringify({ items }),
+    })
+  },
+
+  // ---- proof ----
+
+  /** The receipts. What ran where, and whether the enclave signature verified. */
+  proof() {
+    return request<{ total: number; verified: number; summary: string; receipts: ProofReceipt[] }>(
+      '/users/me/proof',
+    )
+  },
+
+  exportUrl() {
+    return `${BASE}/users/me/export`
   },
 }
 
@@ -355,7 +508,6 @@ function readQueue(): QueuedRequest[] {
     const raw = localStorage.getItem(QUEUE_KEY)
     return raw ? (JSON.parse(raw) as QueuedRequest[]) : []
   } catch {
-    // A corrupt or unavailable store must not break logging.
     return []
   }
 }
@@ -364,8 +516,8 @@ function writeQueue(queue: QueuedRequest[]): void {
   try {
     localStorage.setItem(QUEUE_KEY, JSON.stringify(queue))
   } catch {
-    // Private mode, quota, or blocked storage. Losing the queue is bad but
-    // throwing here would lose the meal in front of the user as well.
+    // Losing the queue is bad, but throwing here would lose the meal in front
+    // of the person as well.
   }
 }
 
@@ -385,9 +537,11 @@ export function queueLength(): number {
 }
 
 /**
- * Replay queued writes. Called on reconnect and at startup.
- * Stops at the first failure so ordering is preserved — meals must land in the
- * order they were eaten.
+ * Replay queued writes, in order.
+ *
+ * Ordering matters: meals must land in the order they were eaten or a day's
+ * totals reconstruct wrongly. So a transient failure stops the drain rather
+ * than skipping ahead.
  */
 export async function flushQueue(): Promise<{ sent: number; remaining: number }> {
   let queue = readQueue()
@@ -400,7 +554,21 @@ export async function flushQueue(): Promise<{ sent: number; remaining: number }>
       queue = queue.slice(1)
       writeQueue(queue)
       sent += 1
-    } catch {
+    } catch (error) {
+      // A rejected write will never succeed on retry, so drop it rather than
+      // blocking every later meal behind it forever. 401 is excluded — that one
+      // resolves the moment they sign back in.
+      const rejected =
+        error instanceof ApiError &&
+        error.status >= 400 &&
+        error.status < 500 &&
+        error.status !== 401 &&
+        error.status !== 429
+      if (rejected) {
+        queue = queue.slice(1)
+        writeQueue(queue)
+        continue
+      }
       break
     }
   }
