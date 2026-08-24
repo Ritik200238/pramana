@@ -28,6 +28,7 @@ const CATALOGUE = 'https://router-api.0g.ai/v1/models'
 
 interface LiveModel {
   id: string
+  pricing_usd?: { prompt?: string; completion?: string }
   tee_attested?: boolean | null
   tee_type?: string | null
   architecture?: { input_modalities?: string[] }
@@ -134,4 +135,38 @@ test('the vision chain spans more than one model', async () => {
 
   const ids = new Set(CHAINS.mealVision.map((model) => model.id))
   assert.equal(ids.size, CHAINS.mealVision.length, 'a chain of duplicates is not a chain')
+})
+
+test('our published prices still match the live catalogue', async () => {
+  const live = await catalogue()
+
+  /*
+   * Hardcoded prices rot silently, and this product's unit economics are the
+   * argument for it existing at all.
+   *
+   * When this check was first written, three of six were wrong: meal vision —
+   * the highest-volume call — was carried at 54% of its real rate, the coach
+   * model at 42%, and speech as free when it is billed. Nothing failed. Every
+   * cost figure the product produced was simply too small.
+   */
+  const drifted: string[] = []
+
+  for (const model of Object.values(MODELS)) {
+    const entry = live.get(model.id)
+    if (!entry?.pricing_usd) continue
+
+    const prompt = Number(entry.pricing_usd.prompt ?? '0')
+    const completion = Number(entry.pricing_usd.completion ?? '0')
+
+    // Exact comparison. A price is a published number, not a measurement, so
+    // there is no tolerance to allow for.
+    if (prompt !== model.usdPerPromptToken) {
+      drifted.push(`${model.id} prompt: ours ${model.usdPerPromptToken}, live ${prompt}`)
+    }
+    if (completion !== model.usdPerCompletionToken) {
+      drifted.push(`${model.id} completion: ours ${model.usdPerCompletionToken}, live ${completion}`)
+    }
+  }
+
+  assert.deepEqual(drifted, [], 'update packages/og/src/models.ts to the live figures')
 })

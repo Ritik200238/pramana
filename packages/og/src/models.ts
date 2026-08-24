@@ -21,7 +21,19 @@ export interface ModelSpec {
   /** Hardware-attested confidential execution (Intel TDX via dstack). */
   readonly tee: boolean
   readonly vision: boolean
-  /** USD per input token, from the Router catalogue. Used for cost accounting. */
+  /**
+   * USD per token, from the Router catalogue — an estimate, not accounting.
+   *
+   * Every response reports its exact charge in neuron, and that is what gets
+   * recorded. These are for budgeting before a call is made, and they drift:
+   * three of six were wrong when last checked against the live catalogue, one
+   * by 135% on the highest-volume call in the product, and speech was carried
+   * as free when it is billed. `npm run test:live` fails when they drift again.
+   *
+   * Audio is not billed per token; the catalogue reports its rate in the same
+   * field, so treat whisper's figure as the Router's own unit rather than a
+   * per-token price.
+   */
   readonly usdPerPromptToken: number
   readonly usdPerCompletionToken: number
 }
@@ -31,8 +43,8 @@ export const MODELS = {
     id: 'qwen3-vl-30b',
     tee: true,
     vision: true,
-    usdPerPromptToken: 0.00000001936,
-    usdPerCompletionToken: 0.0000001892,
+    usdPerPromptToken: 0.0000000359,
+    usdPerCompletionToken: 0.0000003587,
   },
   ogm35b: {
     id: '0gm-1.0-35b-a3b',
@@ -45,8 +57,8 @@ export const MODELS = {
     id: 'qwen3.7-plus',
     tee: true,
     vision: true,
-    usdPerPromptToken: 0.0000002208,
-    usdPerCompletionToken: 0.0000008808,
+    usdPerPromptToken: 0.00000052,
+    usdPerCompletionToken: 0.00000208,
   },
   qwen38max: {
     id: 'qwen3.8-max',
@@ -66,7 +78,7 @@ export const MODELS = {
     id: 'whisper-large-v3',
     tee: true,
     vision: false,
-    usdPerPromptToken: 0,
+    usdPerPromptToken: 0.00013,
     usdPerCompletionToken: 0,
   },
 } as const satisfies Record<string, ModelSpec>
