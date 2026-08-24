@@ -19,10 +19,10 @@ Last updated: 2026-08-24.
 |---|---|---|
 | `@ogt/core` — targets, safety, questions | 45 | `npm test -w @ogt/core` |
 | `@ogt/og` — router, storage, payments | 38 | `npm test -w @ogt/og` |
-| `@ogt/api` — services, routes, wiring | 113 | `npm test -w @ogt/api` |
+| `@ogt/api` — services, routes, wiring | 116 | `npm test -w @ogt/api` |
 | `@ogt/api` — end-to-end, idempotency, delivery | 30 | included above |
 | `@ogt/web` — client and offline queue | 16 | `npm test -w @ogt/web` |
-| `contracts` — Foundry | 94 | `forge test` in `packages/contracts` |
+| `contracts` — Foundry | 108 | `forge test` in `packages/contracts` |
 
 Contract coverage is 100% of lines, statements, branches and functions on both
 `HealthRecordAnchor` and `CoachAgent`.
@@ -45,6 +45,25 @@ As of the last run, against 29 live models:
 
 This is the load-bearing check for the sentence the app shows on its sign-in
 screen. If it ever fails, that sentence has become false.
+
+### The four 0G bindings, and whether each does work
+
+The product was meant to bind to 0G four ways. Two of them were, until this
+session, contracts nothing could reach — complete, fully covered, and with no
+call sites in the running product at all.
+
+| Binding | Mechanism | Reaches the running product |
+|---|---|---|
+| Intelligence | 0G Compute Router, `verify_tee` | yes |
+| Memory | 0G Storage, ECIES per user | yes |
+| Record ownership | `HealthRecordAnchor` | yes, since this session |
+| Coach ownership | `CoachAgent`, ERC-7857 | yes, since this session |
+| Payments | 0G Pay | **no — see below** |
+
+`npm run test:fork -w @ogt/og` drives both chain bindings end to end against a
+fork of live Galileo with the contracts actually deployed: derive the owner
+account, sign EIP-712, relay and pay, then read back that the record and the
+coach belong to the user rather than to whoever paid.
 
 ### 0G Chain — live and forked
 
@@ -207,6 +226,25 @@ keys are user-held.
 
 ---
 
+## Contract capability the product does not yet use
+
+Stated here rather than left for somebody to discover by grepping.
+
+- **`grantAccess` / `revokeAccess`** — the contract can grant a doctor read
+  authorisation over snapshots up to a pinned index, and revoke it. Nothing in
+  the API or the app calls either. Doctor sharing today is the printable visit
+  pack (feature 23), which is a document, not an on-chain grant.
+- **0G Pay** — `packages/og/src/payments.ts` carries the Payment Layer
+  addresses and unit conversion, and nothing imports them. Inference is billed
+  through the Router key, and the PRD puts user-facing payments outside v1.
+
+Neither is a defect; both are capability the product has not reached yet. They
+are listed because "the contract supports it" and "the product does it" are
+different claims, and the difference is exactly what hid the two bindings that
+were fixed this session.
+
+---
+
 ## Known gaps, not yet closed
 
 - **Rate limits are per-process.** Running more than one instance multiplies
@@ -250,10 +288,10 @@ supplies it.
 
 ```bash
 npm install
-npm test --workspaces                      # 248 tests, no network required
+npm test --workspaces                      # 251 tests, no network required
 npm run test:live -w @ogt/og               # 6 live checks; 4 more with a key
-cd packages/contracts && forge test        # 80 tests
+cd packages/contracts && forge test        # 108 tests
 bash script/verify-fork.sh                 # deploy + exercise on forked Galileo
-npm run test:fork -w @ogt/og               # the whole anchoring path on a fork
+npm run test:fork -w @ogt/og               # anchoring and coach ownership on a fork
 npm run preflight -w @ogt/api              # check a deployment against live systems
 ```
