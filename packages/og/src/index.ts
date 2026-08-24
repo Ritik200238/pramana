@@ -80,3 +80,10 @@ export {
   type EvolveResult,
   type MintResult,
 } from './coach-agent.ts'
+
+export {
+  TranscriptionError,
+  transcribeAudio,
+  type TranscriptionOptions,
+  type TranscriptionResult,
+} from './speech.ts'
