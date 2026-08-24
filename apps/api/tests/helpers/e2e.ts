@@ -49,6 +49,10 @@ export interface Harness {
   db: Database
   /** What the fake model was asked to do, in order. */
   modelCalls: Array<{ model: string; messages: unknown }>
+  /** Codes handed to the sender. Proves delivery was attempted, not just stored. */
+  sentCodes: Array<{ to: string; code: string }>
+  /** Set to make the next send fail, as an outage would. */
+  failNextSend: (fail: boolean) => void
   adminToken: string
   close: () => Promise<void>
 }
@@ -113,6 +117,18 @@ export async function startHarness(): Promise<Harness> {
   const db = drizzle(client, { schema }) as unknown as Database
 
   const modelCalls: Harness['modelCalls'] = []
+  const sentCodes: Harness['sentCodes'] = []
+  let failSend = false
+
+  // A recording sender rather than the console one, so tests can assert the
+  // code was actually handed to something that would deliver it.
+  const sender = {
+    name: 'recording',
+    async send(message: { to: string; code: string }) {
+      if (failSend) throw new Error('provider is down')
+      sentCodes.push({ to: message.to, code: message.code })
+    },
+  }
 
   // Imported here rather than at module scope so the env above is in place
   // before the config validator reads it.
@@ -122,6 +138,7 @@ export async function startHarness(): Promise<Harness> {
     db,
     openai: fakeModel(modelCalls) as never,
     storage: { signerAddress: '0x' + '22'.repeat(20) } as never,
+    sender,
     backgroundJobs: false,
     quiet: true,
   })
@@ -132,6 +149,10 @@ export async function startHarness(): Promise<Harness> {
     app,
     db,
     modelCalls,
+    sentCodes,
+    failNextSend: (fail: boolean) => {
+      failSend = fail
+    },
     adminToken: TEST_ENV.ADMIN_TOKEN,
     close: async () => {
       await app.close()

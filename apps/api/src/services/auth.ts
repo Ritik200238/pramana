@@ -23,6 +23,7 @@ import { promisify } from 'node:util'
 import { and, eq, gt, isNull, lt, sql } from 'drizzle-orm'
 import type { Database } from '../db/index.ts'
 import { otpChallenges, sessions, users } from '../db/schema.ts'
+import type { SmsSender } from './sms.ts'
 
 const scrypt = promisify(scryptCallback) as (
   password: string,
@@ -41,8 +42,8 @@ export class AuthError extends Error {
   readonly code: string
   readonly status: number
 
-  constructor(code: string, message: string, status = 401) {
-    super(message)
+  constructor(code: string, message: string, status = 401, options?: ErrorOptions) {
+    super(message, options)
     this.name = 'AuthError'
     this.code = code
     this.status = status
@@ -105,6 +106,8 @@ export interface RequestCodeResult {
 export interface RequestCodeInput {
   db: Database
   phone: string
+  /** Delivers the code. Without this nothing is sent and nobody can sign in. */
+  sender: SmsSender
   /** Returns the code in the response. Refused unless NODE_ENV is development. */
   exposeCodeForDevelopment?: boolean
   now?: Date
@@ -127,12 +130,40 @@ export async function requestCode(input: RequestCodeInput): Promise<RequestCodeR
   const code = generateCode()
   const salt = randomBytes(16).toString('hex')
 
-  await input.db.insert(otpChallenges).values({
-    phone,
-    codeHash: await hashCode(code, salt),
-    salt,
-    expiresAt: new Date(now.getTime() + OTP_TTL_MS),
-  })
+  // Stored before sending, so a code that reaches somebody's phone is always
+  // one this server can verify. The reverse order has a window where a person
+  // holds a code we have no record of.
+  const [challenge] = await input.db
+    .insert(otpChallenges)
+    .values({
+      phone,
+      codeHash: await hashCode(code, salt),
+      salt,
+      expiresAt: new Date(now.getTime() + OTP_TTL_MS),
+    })
+    .returning({ id: otpChallenges.id })
+
+  try {
+    await input.sender.send({
+      to: phone,
+      code,
+      expiresInMinutes: Math.floor(OTP_TTL_MS / 60_000),
+    })
+  } catch (error) {
+    // The challenge is withdrawn rather than left behind. It counts against the
+    // five-per-hour cap, and charging somebody for a message they never
+    // received is how a person ends up locked out by our outage.
+    if (challenge) {
+      await input.db.delete(otpChallenges).where(eq(otpChallenges.id, challenge.id))
+    }
+
+    throw new AuthError(
+      'delivery_failed',
+      'Could not send the code just now. Try again in a moment.',
+      502,
+      { cause: error },
+    )
+  }
 
   return {
     sent: true,

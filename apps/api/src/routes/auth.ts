@@ -27,9 +27,11 @@ import {
   verifyCode,
 } from '../services/auth.ts'
 import { currentUserId, extractToken } from '../plugins/auth.ts'
+import type { SmsSender } from '../services/sms.ts'
 
 export interface AuthRouteDeps {
   db: Database
+  sender: SmsSender
   isDevelopment: boolean
   /** Secure cookies require HTTPS, so this follows the deployment. */
   secureCookies: boolean
@@ -52,6 +54,7 @@ export async function registerAuthRoutes(
     try {
       const result = await requestCode({
         db: deps.db,
+        sender: deps.sender,
         phone: body.phone,
         // Only in development, and gated on the server's own config rather
         // than anything the client can ask for.

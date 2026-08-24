@@ -181,6 +181,61 @@ test('signing out ends the session immediately', async () => {
   })
 })
 
+test('the code is actually handed to a sender, not merely stored', async () => {
+  await withHarness(async (h) => {
+    const response = await h.app.inject({
+      method: 'POST',
+      url: '/auth/request-code',
+      payload: { phone: '9700000001' },
+    })
+    assert.equal(response.statusCode, 200)
+
+    // The defect this guards: nothing sent anything. In production the code was
+    // withheld from the response too, so it existed nowhere a person could
+    // reach it and every sign-in was impossible while this endpoint said 200.
+    assert.equal(h.sentCodes.length, 1, 'a code request must attempt delivery')
+    assert.equal(h.sentCodes[0]!.to, '+919700000001')
+    assert.match(h.sentCodes[0]!.code, /^\d{6}$/)
+
+    // And the code that was sent is the one that works.
+    const verified = await h.app.inject({
+      method: 'POST',
+      url: '/auth/verify',
+      payload: { phone: '9700000001', code: h.sentCodes[0]!.code },
+    })
+    assert.equal(verified.statusCode, 200, verified.body)
+  })
+})
+
+test('a delivery failure is reported and does not spend the hourly quota', async () => {
+  await withHarness(async (h) => {
+    h.failNextSend(true)
+
+    const failed = await h.app.inject({
+      method: 'POST',
+      url: '/auth/request-code',
+      payload: { phone: '9700000002' },
+    })
+    assert.equal(failed.statusCode, 502, 'a message nobody received is not a success')
+
+    const rows = await h.db.execute(
+      "select count(*)::int as count from otp_challenges where phone = '+919700000002'",
+    )
+    const list = (rows as unknown as { rows?: Array<{ count: number }> }).rows ?? rows
+    // Charging somebody for a message they never got is how our outage becomes
+    // their lockout: five of these and they are capped for an hour.
+    assert.equal((list as Array<{ count: number }>)[0]?.count, 0, 'the challenge must be withdrawn')
+
+    h.failNextSend(false)
+    const recovered = await h.app.inject({
+      method: 'POST',
+      url: '/auth/request-code',
+      payload: { phone: '9700000002' },
+    })
+    assert.equal(recovered.statusCode, 200, 'and they can try again immediately')
+  })
+})
+
 test('a forged or altered token is refused', async () => {
   await withHarness(async (h) => {
     const { token } = await signIn(h, '9000000005')

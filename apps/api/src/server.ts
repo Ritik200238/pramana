@@ -28,6 +28,7 @@ import { authPlugin } from './plugins/auth.ts'
 import { idempotencyPlugin } from './plugins/idempotency.ts'
 import { ipLimitsPlugin, userLimitsPlugin } from './plugins/limits.ts'
 import { registerAuthRoutes } from './routes/auth.ts'
+import { createSmsSender, type SmsSender } from './services/sms.ts'
 
 /**
  * Routes reachable without a session.
@@ -69,6 +70,7 @@ export interface ServerOverrides {
   db?: Database
   openai?: OpenAI
   storage?: OGStorage
+  sender?: SmsSender
   /** Background snapshotting. Off in tests so a timer cannot outlive a case. */
   backgroundJobs?: boolean
   /** Silences the logger so a test run's output is its assertions. */
@@ -156,8 +158,21 @@ export async function buildServer(overrides: ServerOverrides = {}) {
     return reply.status(ready ? 200 : 503).send({ ready, checks })
   })
 
+  // Constructed here rather than lazily: a production deployment with no
+  // provider must fail at boot, not on the first person who tries to sign in.
+  const sender =
+    overrides.sender ??
+    createSmsSender({
+      isProduction: config.NODE_ENV === 'production',
+      url: config.SMS_PROVIDER_URL,
+      headers: config.SMS_PROVIDER_HEADERS,
+      body: config.SMS_PROVIDER_BODY,
+      log: (message) => app.log.info(message),
+    })
+
   await registerAuthRoutes(app, {
     db,
+    sender,
     isDevelopment: config.NODE_ENV === 'development',
     secureCookies: config.NODE_ENV === 'production',
   })

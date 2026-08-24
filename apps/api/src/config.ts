@@ -59,6 +59,24 @@ const schema = z.object({
    * misconfigured.
    */
   ADMIN_TOKEN: z.string().min(32).optional(),
+
+  /**
+   * One-time code delivery.
+   *
+   * The vendor is configuration rather than code. India requires DLT
+   * registration with an approved sender id and approved templates before a
+   * transactional SMS delivers at all, so the operator does vendor-specific
+   * work regardless; compiling one vendor's parameter names in would add a code
+   * change to that process without removing any of it.
+   *
+   * Absent in production is a boot failure, not a degraded mode: it means
+   * nobody can sign in while the endpoint answers 200 to every request.
+   */
+  SMS_PROVIDER_URL: z.string().url().optional(),
+  /** JSON object of headers, e.g. {"authkey":"..."}. */
+  SMS_PROVIDER_HEADERS: z.string().optional(),
+  /** JSON body template. Must contain {{code}}; may use {{to}} and {{expiry}}. */
+  SMS_PROVIDER_BODY: z.string().optional(),
 })
 
 export type Config = Readonly<
