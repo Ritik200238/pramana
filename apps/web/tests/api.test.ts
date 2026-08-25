@@ -694,3 +694,66 @@ describe('every screen that waits or fails says so', () => {
     }
   })
 })
+
+describe('opening the app with no signal', () => {
+  /*
+   * The product's central promise is that a meal logged without signal is
+   * saved. All of the machinery for that — the queue, the idempotency keys, the
+   * owner stamping — was unreachable in the one case it was built for.
+   *
+   * Session state is resolved from the server, and any failure was treated as
+   * "signed out". So somebody who reloaded the app underground landed on the
+   * sign-in screen, where they could not sign in either, and could not log the
+   * meal in front of them. On Android a PWA is reloaded whenever the system
+   * needs the memory, so this was not a rare path.
+   */
+  test('a network failure is not a sign-out', async () => {
+    // A token as well as a session: without something to authenticate with
+    // there is nothing to open on, which lastKnownSession is right to enforce.
+    api.storeToken('a-live-token')
+    api.storeSession('user-a', true)
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw new TypeError('Failed to fetch')
+      }),
+    )
+
+    await expect(api.api.me()).rejects.toBeDefined()
+
+    // The token survives, and what we last knew is still there to open on.
+    expect(api.lastKnownSession()).toEqual({ userId: 'user-a', onboarded: true })
+  })
+
+  test('a 401 is a sign-out, and is told apart from a network failure', async () => {
+    scriptFetch([401])
+    await expect(api.api.me()).rejects.toMatchObject({ status: 401 })
+
+    // The 401 handler clears the token, so there is nothing to open on — which
+    // is correct: this person really is signed out.
+    expect(api.lastKnownSession()).toBeNull()
+  })
+
+  test('isAuthFailure separates the two', () => {
+    expect(api.isAuthFailure(new TypeError('Failed to fetch'))).toBe(false)
+    expect(api.isAuthFailure(new api.ApiError('nope', 500))).toBe(false)
+    expect(api.isAuthFailure(new api.ApiError('nope', 503))).toBe(false)
+    expect(api.isAuthFailure(new api.ApiError('gone', 401))).toBe(true)
+  })
+
+  test('there is nothing to open on before anybody has signed in', () => {
+    // A first visit with no network should still show the sign-in screen rather
+    // than an empty app pretending to be somebody's.
+    expect(api.lastKnownSession()).toBeNull()
+  })
+
+  test('signing out leaves nothing to open on', () => {
+    api.storeSession('user-a', true)
+    api.storeToken('t')
+    expect(api.lastKnownSession()).not.toBeNull()
+
+    api.clearToken()
+    expect(api.lastKnownSession()).toBeNull()
+  })
+})

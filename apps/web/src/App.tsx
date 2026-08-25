@@ -20,8 +20,10 @@ import {
   api,
   clearToken,
   flushQueue,
+  isAuthFailure,
+  lastKnownSession,
   queueLength,
-  storeUserId,
+  storeSession,
   SESSION_EXPIRED,
 } from './lib/api.ts'
 import './app.css'
@@ -48,9 +50,33 @@ export function App() {
       // Recorded before anything can be queued, so a meal logged offline is
       // attributable to the person who logged it rather than to whoever is
       // holding the phone when it finally sends.
-      storeUserId(me.user.id)
+      storeSession(me.user.id, me.onboarded)
       setAuth({ state: me.onboarded ? 'ready' : 'onboarding' })
-    } catch {
+      return
+    } catch (error) {
+      /*
+       * A 401 means signed out. Anything else means we could not ask.
+       *
+       * Treating both the same put somebody who reloaded the app underground
+       * on the sign-in screen — where they could not sign in either, because
+       * that needs the network too, and could not log the meal in front of
+       * them. The offline queue exists for precisely that moment and was
+       * unreachable in it.
+       *
+       * So when the network is the problem and we still hold a token, the app
+       * opens on what we last knew. Reads come from the service worker cache,
+       * writes queue, and the first genuine 401 from anywhere signs them out
+       * properly through the listener below.
+       */
+      if (!isAuthFailure(error)) {
+        const known = lastKnownSession()
+        if (known) {
+          setAuth({ state: known.onboarded ? 'ready' : 'onboarding' })
+          return
+        }
+      }
+
+      clearToken()
       setAuth({ state: 'signed-out' })
     }
   }, [])

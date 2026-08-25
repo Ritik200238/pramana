@@ -306,6 +306,41 @@ export async function clearCachedReads(): Promise<void> {
 }
 
 const USER_KEY = 'ogt.user'
+const ONBOARDED_KEY = 'ogt.onboarded'
+
+/**
+ * The last thing the server told us about this person.
+ *
+ * Kept so the app can open while offline. Session state is normally resolved
+ * from the server, which is right — but treating a failed request as "signed
+ * out" meant that reloading the app with no signal put somebody on the sign-in
+ * screen, where they could not sign in either, and could not log the meal in
+ * front of them. The offline queue exists for exactly that moment and was
+ * unreachable in it.
+ *
+ * This is a cache of an answer, never an authority. A real 401 still signs
+ * somebody out, from anywhere in the app.
+ */
+export function storeSession(userId: string, onboarded: boolean): void {
+  storeUserId(userId)
+  try {
+    localStorage.setItem(ONBOARDED_KEY, onboarded ? '1' : '0')
+  } catch {
+    // Then the app simply asks the server next time, as it always did.
+  }
+}
+
+/** What we last knew, for opening the app without a network. */
+export function lastKnownSession(): { userId: string; onboarded: boolean } | null {
+  const userId = readUserId()
+  if (!userId || !readToken()) return null
+
+  try {
+    return { userId, onboarded: localStorage.getItem(ONBOARDED_KEY) === '1' }
+  } catch {
+    return null
+  }
+}
 
 /** Remember who is signed in, so queued work can be attributed to them. */
 export function storeUserId(userId: string): void {
@@ -331,6 +366,7 @@ export function clearToken(): void {
     // The queue is deliberately left alone: those meals still belong to the
     // person who logged them, and they send when that person signs back in.
     localStorage.removeItem(USER_KEY)
+    localStorage.removeItem(ONBOARDED_KEY)
   } catch {
     // Nothing useful to do here.
   }
@@ -381,6 +417,16 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   return (await response.json()) as T
+}
+
+/**
+ * Whether a failure means "you are signed out" or "we could not ask".
+ *
+ * The difference decides whether somebody is shown a sign-in screen or their
+ * own day, and it is the whole reason the app can be opened underground.
+ */
+export function isAuthFailure(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 401
 }
 
 export function isBlocked(value: unknown): value is BlockedResponse {
