@@ -26,18 +26,45 @@ const COPY: Readonly<Record<Confidence, { dot: string; label: string; explain: s
   rough: {
     dot: '🔴',
     label: 'Rough',
-    explain: 'I estimated some of this. Tap any item to correct it.',
+    explain: 'I estimated some of this.',
   },
+}
+
+/**
+ * What to do about a rough number, which depends on where you are standing.
+ *
+ * The explanation used to end with "Tap any item to correct it" everywhere. On
+ * the day view that is true — the meals are listed right underneath and each one
+ * opens a correction. On the screen straight after logging it is not: that
+ * screen shows a total, a badge and a Done button, and nothing on it can be
+ * tapped.
+ *
+ * So the app told people to do something impossible at the exact moment they
+ * were most likely to want it, having just been told the number was a guess.
+ */
+const ACTION: Readonly<Record<'here' | 'later', string>> = {
+  here: ' Tap any item to correct it.',
+  later: ' You can correct it once it is logged.',
 }
 
 export interface ConfidenceBadgeProps {
   level: Confidence
   /** Compact form for lists; the full form carries the explanation. */
   compact?: boolean
+  /**
+   * Whether this screen has something to tap. Defaults to false, so a new
+   * placement has to claim the affordance rather than inherit a promise it may
+   * not keep — which is how the wrong copy got onto the result screen.
+   */
+  correctable?: boolean
 }
 
-export function ConfidenceBadge({ level, compact }: ConfidenceBadgeProps) {
-  const copy = COPY[level]
+export function ConfidenceBadge({ level, compact, correctable = false }: ConfidenceBadgeProps) {
+  const base = COPY[level]
+  const copy =
+    level === 'rough'
+      ? { ...base, explain: base.explain + (correctable ? ACTION.here : ACTION.later) }
+      : base
 
   if (compact) {
     return (

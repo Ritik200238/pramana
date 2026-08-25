@@ -135,7 +135,7 @@ export function Today({ onCapture, onOpenChat }: TodayProps) {
 
       {day && day.mealCount > 0 && (
         <div className="day-confidence">
-          <ConfidenceBadge level={day.confidence} />
+          <ConfidenceBadge level={day.confidence} correctable />
         </div>
       )}
 
