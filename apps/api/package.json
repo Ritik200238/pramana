@@ -10,7 +10,8 @@
     "test": "node --test --experimental-strip-types tests/*.test.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "node --experimental-strip-types src/db/migrate.ts",
-    "preflight": "node --experimental-strip-types src/preflight.ts"
+    "preflight": "node --experimental-strip-types src/preflight.ts",
+    "test:pipeline": "node --test --experimental-strip-types tests/live/pipeline.test.ts"
   },
   "dependencies": {
     "@fastify/cors": "^10.0.1",
