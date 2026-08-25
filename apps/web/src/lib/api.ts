@@ -330,6 +330,23 @@ export function storeSession(userId: string, onboarded: boolean): void {
   }
 }
 
+/**
+ * Record that onboarding is finished.
+ *
+ * Needed because the cached answer is only refreshed when the server is asked,
+ * and completing onboarding changes the answer without asking. Without this,
+ * somebody who finished their profile and then reloaded with no signal was sent
+ * back to onboarding to redo it — and could not, because submitting needs the
+ * network.
+ */
+export function markOnboarded(): void {
+  try {
+    if (readUserId()) localStorage.setItem(ONBOARDED_KEY, '1')
+  } catch {
+    // The server is asked again next time there is a network, as before.
+  }
+}
+
 /** What we last knew, for opening the app without a network. */
 export function lastKnownSession(): { userId: string; onboarded: boolean } | null {
   const userId = readUserId()

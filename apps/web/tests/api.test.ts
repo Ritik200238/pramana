@@ -748,6 +748,35 @@ describe('opening the app with no signal', () => {
     expect(api.lastKnownSession()).toBeNull()
   })
 
+  test('finishing onboarding is remembered, so a reload does not ask again', () => {
+    api.storeToken('a-live-token')
+    api.storeSession('user-a', false)
+
+    // The cached answer is only refreshed by asking the server, and finishing
+    // onboarding changes the answer without asking. Missing this sent somebody
+    // who had just completed their profile back to redo it after an offline
+    // reload — which they could not, because submitting needs the network.
+    api.markOnboarded()
+
+    expect(api.lastKnownSession()).toEqual({ userId: 'user-a', onboarded: true })
+  })
+
+  test('nothing is remembered for somebody who was never signed in', () => {
+    storage.clear()
+
+    api.markOnboarded()
+
+    /*
+     * The stored flag itself, not lastKnownSession.
+     *
+     * Asserting the latter passed for the wrong reason — it also requires a
+     * token, so it returned null whether or not the flag had been written.
+     * Mutation testing caught that: removing the guard changed nothing.
+     */
+    expect(storage.getItem('ogt.onboarded')).toBeNull()
+    expect(api.lastKnownSession()).toBeNull()
+  })
+
   test('signing out leaves nothing to open on', () => {
     api.storeSession('user-a', true)
     api.storeToken('t')

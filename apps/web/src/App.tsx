@@ -22,6 +22,7 @@ import {
   flushQueue,
   isAuthFailure,
   lastKnownSession,
+  markOnboarded,
   queueLength,
   storeSession,
   SESSION_EXPIRED,
@@ -126,7 +127,16 @@ export function App() {
   }
 
   if (auth.state === 'onboarding') {
-    return <Onboarding onDone={() => setAuth({ state: 'ready' })} />
+    return (
+      <Onboarding
+        onDone={() => {
+          // Recorded, not just set. Otherwise a reload with no signal asks them
+          // to do the profile they have just finished.
+          markOnboarded()
+          setAuth({ state: 'ready' })
+        }}
+      />
+    )
   }
 
   return (
