@@ -390,6 +390,14 @@ fees 0.000000 0G + current request fee 0.000000 0G)
 The wallet holds ~0.35 0G with 0.1 0G in the ledger. **Roughly 0.7 0G more — two
 faucet claims — and the call runs.**
 
+Checked against both providers rather than assumed from one: the image-editing
+provider (`0x4b2a…4389`, sub-account funded with 0.05 0G and acknowledged, tx
+`0x2dbfb27b431f0effeb9d19e46460668e5b9e2d7fc9374ff35674ea6472572589`) returns
+the identical message. The 1 0G reserve is a floor across the marketplace, not
+one provider's setting, so there is no cheaper provider to route around it and
+no partial verification available at this balance. Retrieving every sub-account
+back into the ledger reaches roughly 0.50 0G, still short.
+
     npm run test:compute -w @ogt/og
 
 Discovery already passes live. The inference case skips with the shortfall
