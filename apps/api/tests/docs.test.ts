@@ -146,3 +146,28 @@ test('a NOT VERIFIED marker is never left beside a passing claim', () => {
     assert.ok(!(verified && not), `a heading claims both at once: ${heading}`)
   }
 })
+
+
+test('the Foundry count in the ledger matches the contracts', () => {
+  /*
+   * The other number a reader checks. Counted from the test contracts rather
+   * than trusted, for the same reason as the suite total above: it is the first
+   * thing somebody verifies and the last thing anybody remembers to update.
+   */
+  const testDir = join(ROOT, 'packages', 'contracts', 'test')
+
+  let counted = 0
+  for (const entry of readdirSync(testDir, { withFileTypes: true })) {
+    if (!entry.isFile() || !entry.name.endsWith('.t.sol')) continue
+    const source = readFileSync(join(testDir, entry.name), 'utf8')
+    counted += (source.match(/^\s*function test/gm) ?? []).length
+  }
+
+  const claimed = Number(/forge test\s+#\s*(\d+) tests/.exec(ledger())?.[1] ?? 0)
+
+  assert.ok(claimed > 0, 'the ledger must state how many contract tests there are')
+  assert.ok(
+    counted >= claimed,
+    `the ledger claims ${claimed} Foundry tests; ${counted} are declared`,
+  )
+})
