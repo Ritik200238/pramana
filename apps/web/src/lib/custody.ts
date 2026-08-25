@@ -12,13 +12,21 @@
  * cost — to support a setting they will not use would be the wrong trade.
  */
 
+import { freshImport } from './fresh-import.ts'
+
 const PHRASE_KEY = 'ogt:custody-phrase'
 
 /** Loaded once, then reused. */
 let ethersModule: typeof import('ethers') | null = null
 
 async function ethers(): Promise<typeof import('ethers')> {
-  ethersModule ??= await import('ethers')
+  /*
+   * Through `freshImport`, because this is the only lazily loaded module in the
+   * app and therefore the only thing that breaks when a deploy lands while
+   * somebody has the app open: the new service worker claims the page and
+   * deletes the chunk this line is about to ask for.
+   */
+  ethersModule ??= await freshImport(() => import('ethers'))
   return ethersModule
 }
 

@@ -391,6 +391,52 @@ hides. Records written *before* taking custody stay under the key we held; this
 applies going forward. And there is no reset: lose the words and those records
 stay closed.
 
+### A deploy landing while somebody has the app open
+
+    npm test -w @ogt/web    # tests/fresh-import.test.ts
+
+The service worker is registered with `autoUpdate`, and the built worker carries
+`skipWaiting`, `clientsClaim` and `cleanupOutdatedCaches` — verified by reading
+`dist/sw.js` and `dist/registerSW.js` rather than the config. A deploy therefore
+takes effect immediately: the new worker activates, claims pages that are
+already open, and deletes the previous precache.
+
+That is the behaviour we want, and it has one sharp edge. A page opened before
+the deploy is still running the old JavaScript, and chunk names are
+content-hashed — so the moment it needs a lazily loaded module it asks for a
+file that no longer exists anywhere.
+
+The app has exactly one lazily loaded module and it is on the custody path.
+Somebody who left the app open, came back after a deploy, and tapped "take my
+key" was told **"could not create a key on this device"**. Their device was
+fine. We deleted the file while they were reading.
+
+Closed by recognising that specific failure and reloading once — the only thing
+that fixes it — with a guard so a bad deploy cannot turn into a reload loop,
+because a loop takes away even the ability to read an error.
+
+| Property | Proved by |
+|---|---|
+| Every browser's wording of a missing chunk is recognised | Test — Chrome, Firefox, Safari, and an HTML error page |
+| An ordinary failure is rethrown untouched, with no reload | Test |
+| A missing chunk reloads once | Test |
+| Never twice | Test |
+| With nowhere to record the attempt, it does not reload at all | Test |
+| The one lazy import actually goes through it | Test, against the source |
+
+Four mutations. **Two were caught only after strengthening the tests**, and both
+weaknesses are worth naming. One test checked the predicate but never that the
+function consults it, so deleting that check passed everything. The other
+accepted any rejection, so removing the storage guard passed by throwing a
+`TypeError` on null instead — a rejection that is just as convincing and means
+something completely different.
+
+**Noted, not fixed:** one transient failure of an unrelated Today test was seen
+in four full web runs, with three consecutive clean runs after. The assertion
+already retries, so this looks like timeout pressure under parallel workers
+rather than a product defect. Recorded because a flaky test that nobody writes
+down becomes a test everybody learns to ignore.
+
 ### The rate limiter, under a burst rather than a queue — a real defect
 
     npm test -w @ogt/api    # tests/burst.test.ts, tests/counting-store.test.ts
@@ -1134,7 +1180,7 @@ Nothing here rests on being believed.
 
 ```bash
 npm install
-npm test --workspaces                      # 533 tests: 53 core, 91 og, 258 api, 131 web
+npm test --workspaces                      # 541 tests: 53 core, 91 og, 258 api, 139 web
 npm run typecheck --workspaces             # four packages, strict
 npm audit --omit=dev                       # 0 production vulnerabilities
 cd packages/contracts && forge test        # 116 tests

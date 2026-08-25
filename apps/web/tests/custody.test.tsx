@@ -213,7 +213,16 @@ describe('Custody', () => {
       'utf8',
     )
 
+    // No static import — that is the line that would put 376 KB into
+    // everybody's first load.
     expect(source).not.toMatch(/^import .*from 'ethers'/m)
-    expect(source).toMatch(/await import\('ethers'\)/)
+
+    /*
+     * And a dynamic one, however it is spelled. It is wrapped in `freshImport`
+     * now, so matching `await import('ethers')` exactly failed on a change that
+     * kept the property perfectly intact — the guard should be about the
+     * property, not one arrangement of it.
+     */
+    expect(source).toMatch(/import\('ethers'\)/)
   })
 })
