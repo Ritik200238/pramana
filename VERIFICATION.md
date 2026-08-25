@@ -345,6 +345,52 @@ see the pool guard below.
 Deliberately not wrapped in a transaction. A pass that threw would roll back
 snapshot rows whose uploads have already been paid for and cannot roll back.
 
+### Custody — what we can do, and what we stop being able to do
+
+By default we hold the key. It is derived from one master seed, which is what
+lets somebody who has never held a wallet own a record on chain at all. That is
+standard, it is ahead of the category — mainstream nutrition apps keep this data
+in plaintext — and it is not the strongest thing available.
+
+The strongest thing available needs hardware: Signal's Secure Value Recovery and
+WhatsApp's encrypted backups escrow keys inside enclaves. 0G's own ERC-7857
+describes a TEE oracle that would let us do the same, and the documentation
+ships a `MockOracle` with *"replace with real oracle in production"* and no
+deployed address. **Building on that today would be a claim, not a mechanism.**
+
+So this ships the shape Apple and Google actually use: recoverable by default,
+real custody as an opt-in. The opt-in invents no cryptography — standard BIP-39
+on the standard BIP-44 path, so the same twelve words open the same account in
+any wallet.
+
+| Property | Proved by |
+|---|---|
+| The master seed does not reach a self-custody key | Test, against every combination we hold |
+| The phrase never reaches the server | Test asserts it appears in neither the request nor storage |
+| A mismatched key and address is refused | Test — it would orphan records unrecoverably |
+| Taking custody twice is refused | Test — a second key orphans the first's records |
+| `ensureRecordKey` leaves their key alone | Test — the seed-drift check must not fire here |
+| **The anchor worker does not sign for them** | Test, with a client that records any attempt |
+| A signature from the wrong key is refused before submission | Test — the contract would revert and we would pay |
+| Their device's signature anchors the record | Test — owner is theirs, relayer still pays |
+| The phrase is a real BIP-39 phrase on the standard path | Test against a fixed vector and an independent wallet |
+| A signature it produces verifies as its owner | Test, recomputed independently of the signer |
+| The button is unreachable until the phrase is written down | Test |
+| The irreversibility is stated before committing | Test |
+| ethers stays lazily loaded | Test on the source; the chunk is 376 KB vs 240 KB for the app |
+
+Checked by breaking each: fourteen mutations across the key module, the API and
+the interface — including a worker that signs with the master seed anyway, a
+route that skips signature verification, a button enabled before the phrase is
+saved, and a static ethers import. Every one fails the suite.
+
+**The honest limits.** The phrase is kept in the device's local storage so
+anchoring can continue without prompting on every background signature — anybody
+with the unlocked device can read it, which the interface says rather than
+hides. Records written *before* taking custody stay under the key we held; this
+applies going forward. And there is no reset: lose the words and those records
+stay closed.
+
 ### Dependencies
 
 `npm audit --omit=dev` reports **0 vulnerabilities**. Dev dependencies carry
