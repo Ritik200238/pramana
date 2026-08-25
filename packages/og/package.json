@@ -10,7 +10,8 @@
     "test:live": "node --test --experimental-strip-types tests/live/registry.test.ts tests/live/inference.test.ts",
     "test:fork": "node --test --experimental-strip-types tests/live/anchor.fork.test.ts",
     "test:storage": "node --test --experimental-strip-types tests/live/storage.test.ts",
-    "test:relayed": "node --test --experimental-strip-types tests/live/relayed.test.ts"
+    "test:relayed": "node --test --experimental-strip-types tests/live/relayed.test.ts",
+    "test:compute": "node --test --experimental-strip-types tests/live/compute.test.ts"
   },
   "dependencies": {
     "@0gfoundation/0g-storage-ts-sdk": "^1.2.11",
