@@ -441,10 +441,17 @@ has never heard of. Every attempt would have failed in a way that looks like an
 outage. The chain is now overridable and the broker path supplies its own,
 priced from the on-chain record.
 
-**"Settles the fee on chain" per request was too strong.** Measured: the locked
-balance does not move on each call — usage is reported and the provider settles
-later. The per-call on-chain deduction is **NOT VERIFIED**; what is verified is
-that reporting succeeds without error.
+**"Settles the fee on chain" per request was too strong.** Measured across three
+consecutive calls: the locked balance stayed at 1.51 0G and the account nonce
+stayed at 0, and `getAccountWithDetail` exposes no unsettled figure on our side.
+The provider's own error messages carry an "unsettled fees" line, so it accounts
+for usage internally and settles on its own schedule.
+
+That is a property of the design rather than a gap in this code, and it is now
+stated as one: **what we verify is that usage reporting succeeds and that the
+balance locked with the provider is on chain and readable by anyone. When that
+provider converts accrued usage into an on-chain deduction is not observable
+from a client**, and no amount of work here would make it so.
 
 Attestation is handled honestly rather than pretended. A direct provider returns
 no `x_0g_trace`, so provenance comes from the marketplace record on chain —
@@ -550,28 +557,40 @@ never moved real bytes.
 
 **To close it:** a funded `OG_STORAGE_PRIVATE_KEY` and `OG_ANCHOR_MASTER_SEED`.
 
-### SMS delivery
+### SMS delivery — the wire is verified, the vendor is not
 
-**Status: the path exists and is tested; no vendor account is connected.**
+    npm test -w @ogt/api      # tests/sms-wire.test.ts
 
-The delivery port, the HTTP adapter, the boot refusal and the failure handling
-are all implemented and covered by sixteen tests, including an end-to-end case
-asserting the code is handed to a sender and that the code delivered is the one
-that verifies. What has not happened is a real message to a real handset.
+This was recorded as unverified, and half of that was wrong. Nobody can verify a
+vendor account or a DLT-approved template without having one — that part is
+operational and stays open. But the sender itself had never put a single request
+on a wire: every test around it stubbed `fetch` or inspected configuration, so
+what a provider would actually receive was unproven, and the first person to
+find out would have been the first real user who could not sign in.
 
-The vendor is configuration rather than code, because India requires DLT
-registration with an approved sender id and approved templates before a
-transactional SMS delivers at all — work the operator must do regardless of
-what this repository says.
+It now runs against a real `node:http` server, and what arrives is read off the
+socket:
 
-**To close it:** a provider account, a DLT-approved template, and
+| Property | Proved by |
+|---|---|
+| The provider receives the method, path, auth header and filled template | Real request, parsed on the server |
+| A phone number containing a quote cannot become a field | Real JSON parse, not our assumption about the string |
+| A rejected send raises rather than looking delivered | Real 401 |
+| The one-time code never escapes in the error, even when the provider echoes it back | Real 500 carrying the code |
+| A dead provider fails in seconds rather than hanging | Real refused connection |
 
-```
-SMS_PROVIDER_URL / SMS_PROVIDER_HEADERS / SMS_PROVIDER_BODY
-```
+Checked by breaking it, and one of those breaks found a defect in the test rather
+than the code: the first version asserted the code never reached a logger, and
+`HttpSmsConfig` has no logger, so it passed by having nothing to observe. An
+inert guard is worse than no guard because it reads like one. Rewritten to assert
+the realistic leak path — the thrown error, its message and its stack — and then
+confirmed by attaching the echoed body to the error and watching it fail.
 
-Production refuses to boot without them, so this cannot be forgotten into a
-deployment.
+**Still open, and genuinely operational:** an account with an Indian SMS vendor
+and a DLT-registered template. The server refuses to boot in production without
+one, which is deliberate: absent, nobody can sign in while the endpoint answers
+200 to every request.
+
 
 ### Real users
 
@@ -832,7 +851,7 @@ Nothing here rests on being believed.
 
 ```bash
 npm install
-npm test --workspaces                      # 439 tests: 45 core, 91 og, 222 api, 81 web
+npm test --workspaces                      # 444 tests: 45 core, 91 og, 227 api, 81 web
 npm run typecheck --workspaces             # four packages, strict
 npm audit --omit=dev                       # 0 production vulnerabilities
 cd packages/contracts && forge test        # 113 tests
