@@ -243,9 +243,28 @@ export async function buildServer(overrides: ServerOverrides = {}) {
     storageSigner: storage.signerAddress,
   }))
 
-  // Readiness: can we actually serve. Checks the dependencies we cannot work
-  // without, and reports degraded rather than lying about being healthy.
+  /*
+   * Readiness: should anything be sent here right now.
+   *
+   * Distinct from liveness on purpose. `/health` answering means the process is
+   * alive and must not be killed; this answering means it can take work. During
+   * a shutdown the first is true and the second is not, and conflating them
+   * either kills a draining process early or keeps routing traffic into one
+   * that is closing.
+   */
   app.get('/ready', async (_request, reply) => {
+    /*
+     * Said before the drain begins, not during it.
+     *
+     * A load balancer stops sending work when this turns 503, and it only
+     * notices on its next probe. Closing the socket first — which is what
+     * happened before this existed — means every request in that window is
+     * refused rather than answered, on every single deploy.
+     */
+    if (shuttingDown) {
+      return reply.status(503).send({ ready: false, shuttingDown: true, checks: {} })
+    }
+
     const checks: Record<string, 'ok' | 'failed'> = {}
 
     try {
@@ -256,7 +275,7 @@ export async function buildServer(overrides: ServerOverrides = {}) {
     }
 
     const ready = Object.values(checks).every((value) => value === 'ok')
-    return reply.status(ready ? 200 : 503).send({ ready, checks })
+    return reply.status(ready ? 200 : 503).send({ ready, shuttingDown: false, checks })
   })
 
   // Constructed here rather than lazily: a production deployment with no
@@ -538,6 +557,41 @@ const isEntrypoint = process.argv[1] !== undefined && import.meta.url.endsWith(p
 const SHUTDOWN_GRACE_MS = 25_000
 
 /**
+ * How long to keep answering after readiness turns 503.
+ *
+ * A load balancer only learns this process is going away on its next probe, and
+ * requests it already routed are still arriving. Draining immediately would
+ * refuse them. Kubernetes probes every ten seconds by default, so this is one
+ * cycle plus a little — long enough to be noticed, short enough to leave most
+ * of the grace window for the drain itself.
+ */
+const READINESS_DRAIN_MS = 12_000
+
+/**
+ * Whether a shutdown has begun.
+ *
+ * Module-level because `/ready` is registered once per server and the signal
+ * arrives long afterwards; threading a flag through the route would mean the
+ * route holding a reference to something that does not exist yet at
+ * registration time.
+ */
+let shuttingDown = false
+
+/** Exported for tests, which cannot send this process a real signal. */
+export function beginShutdown(): void {
+  shuttingDown = true
+}
+
+export function isShuttingDown(): boolean {
+  return shuttingDown
+}
+
+/** Tests share a module instance; without this, one case leaks into the next. */
+export function resetShutdownState(): void {
+  shuttingDown = false
+}
+
+/**
  * Stop taking new work, let what is running finish, then close.
  *
  * There was no signal handling here at all, so every deploy killed the process
@@ -559,8 +613,21 @@ export async function shutdown(
    * repeatedly shown can be satisfied without the behaviour being there.
    */
   exit: (code: number) => void = (code) => process.exit(code),
+  /** Shortened in tests, which should not wait twelve seconds to prove a flag. */
+  drainDelayMs: number = READINESS_DRAIN_MS,
 ): Promise<void> {
-  app.log.info({ signal }, 'shutting down; finishing what is in flight')
+  /*
+   * Readiness first, then a pause, then the drain.
+   *
+   * Turning 503 is what tells a load balancer to stop, and it only finds out on
+   * its next probe — so closing straight away refuses everything already in
+   * flight toward us. That is the difference between a deploy nobody notices
+   * and one that produces a burst of errors every time.
+   */
+  beginShutdown()
+  app.log.info({ signal }, 'shutting down; refusing readiness, finishing what is in flight')
+
+  await new Promise((resolve) => setTimeout(resolve, drainDelayMs))
 
   const forced = setTimeout(() => {
     // A request that will not finish must not hold the deploy open until the

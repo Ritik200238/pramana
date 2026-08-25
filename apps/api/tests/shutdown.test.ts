@@ -16,14 +16,27 @@
  * drops, and that it cannot hang forever waiting for a request that never ends.
  */
 
-import { test } from 'node:test'
+import { beforeEach, test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { startHarness } from './helpers/e2e.ts'
-import { shutdown } from '../src/server.ts'
+import { beginShutdown, isShuttingDown, resetShutdownState, shutdown } from '../src/server.ts'
 
 const SERVER = join(import.meta.dirname, '..', 'src', 'server.ts')
+
+/*
+ * The shutdown flag lives on the module, because the signal arrives long after
+ * the route is registered. That makes it shared across every case in this file,
+ * and the first version of these tests did not reset it — so the two cases that
+ * call `shutdown()` left it set and a later one saw a server already draining.
+ *
+ * Reset before each rather than after, so a case that throws cannot poison the
+ * next one.
+ */
+beforeEach(() => {
+  resetShutdownState()
+})
 
 test('closing the server stops every background worker', async () => {
   /*
@@ -106,3 +119,89 @@ test('a shutdown that will not finish gives up rather than hanging', () => {
   assert.ok(Number(grace) < 30_000, `${grace}ms is not inside a default grace period`)
 })
 
+test('readiness refuses before the drain, while health keeps saying alive', async () => {
+  /*
+   * The two mean different things and a deploy needs both. `/health` answering
+   * means the process is alive and must not be killed; `/ready` answering means
+   * it can take work. During a shutdown the first is true and the second is not.
+   *
+   * Conflating them either kills a draining process early or keeps routing
+   * traffic into one that is closing.
+   */
+  const harness = await startHarness()
+
+  try {
+    const before = await harness.app.inject({ method: 'GET', url: '/ready' })
+    assert.equal(before.statusCode, 200)
+    assert.equal(before.json().shuttingDown, false)
+
+    beginShutdown()
+
+    const during = await harness.app.inject({ method: 'GET', url: '/ready' })
+    assert.equal(during.statusCode, 503, 'a load balancer must be told to stop')
+    assert.equal(during.json().shuttingDown, true)
+
+    // Still alive. Answering 503 here would invite an orchestrator to kill the
+    // process mid-drain, which is the thing the drain exists to avoid.
+    const health = await harness.app.inject({ method: 'GET', url: '/health' })
+    assert.equal(health.statusCode, 200, 'liveness must not fail during a shutdown')
+  } finally {
+    resetShutdownState()
+    await harness.close()
+  }
+})
+
+test('the drain waits after refusing readiness, rather than closing at once', async () => {
+  /*
+   * A load balancer only learns this process is going away on its next probe,
+   * and requests it already routed are still arriving. Closing immediately
+   * refuses them — a burst of errors on every deploy, which is exactly what
+   * this sequencing exists to prevent.
+   */
+  const order: string[] = []
+
+  const app = {
+    close: async () => {
+      // The property that matters: by the time anything closes, the load
+      // balancer has already been told to stop.
+      order.push(`closed, shuttingDown=${isShuttingDown()}`)
+    },
+    // Logs are not part of the sequence being asserted — there are two of them
+    // and counting them made this test about the wrong thing.
+    log: { info: () => undefined, error: () => undefined },
+  }
+
+  try {
+    await shutdown(app as never, 'SIGTERM', (code) => order.push(`exit ${code}`), 5)
+
+    assert.deepEqual(order, ['closed, shuttingDown=true', 'exit 0'])
+  } finally {
+    resetShutdownState()
+  }
+})
+
+test('the pause between refusing readiness and closing actually happens', async () => {
+  /*
+   * The pause is the whole mechanism, and ordering alone cannot see it: close
+   * still happens after `beginShutdown()` whether the wait is there or not.
+   * Deleting it passed every other test here.
+   *
+   * A load balancer learns this process is going away on its next probe. Remove
+   * the wait and the socket closes before it finds out, which produces exactly
+   * the refused requests the sequencing exists to prevent.
+   */
+  const app = {
+    close: async () => undefined,
+    log: { info: () => undefined, error: () => undefined },
+  }
+
+  const started = Date.now()
+  await shutdown(app as never, 'SIGTERM', () => undefined, 60)
+  const elapsed = Date.now() - started
+
+  resetShutdownState()
+
+  // Generous lower bound: timers are not precise, and the assertion is that a
+  // wait occurred at all rather than that it was exactly sixty milliseconds.
+  assert.ok(elapsed >= 45, `shutdown returned after ${elapsed}ms; it did not wait`)
+})

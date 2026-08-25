@@ -410,10 +410,27 @@ What was lost was somebody's request. The offline queue retries with the same
 idempotency key, so nothing vanished permanently; it simply looked to them like
 the app had failed, which is its own cost and an avoidable one.
 
-SIGTERM and SIGINT now drain through `app.close()` — which runs the hook, stops
-the workers and empties the pool — then exit zero. A deadline of 25 seconds sits
+SIGTERM and SIGINT now do three things in order, and the order is the point.
+
+**Readiness turns 503 first.** A load balancer stops sending work when it sees
+that, and it only finds out on its next probe. Adding the drain without this —
+which is what shipped in the first attempt — closes the socket before the
+balancer knows, so every request already routed here is refused rather than
+answered. On every deploy.
+
+**Then a pause**, twelve seconds: one Kubernetes probe cycle and a little,
+long enough to be noticed and short enough to leave most of the grace window for
+the work itself.
+
+**Then the drain**, through `app.close()`, which runs the hook, stops the
+workers and empties the pool, before exiting zero. The deadline is 25 seconds,
 inside the 30 an orchestrator typically allows, because a shutdown that hangs
-gets SIGKILL and takes everything still in flight with it.
+earns SIGKILL and takes everything still in flight with it.
+
+`/health` keeps answering 200 throughout. Liveness and readiness mean different
+things — alive and must not be killed, versus able to take work — and during a
+shutdown the first is true while the second is not. Conflating them either kills
+a draining process early or keeps routing traffic into one that is closing.
 
 | Property | Proved by |
 |---|---|
@@ -422,9 +439,18 @@ gets SIGKILL and takes everything still in flight with it.
 | Both deploy signals are handled, not just Ctrl-C | Test |
 | The deadline is inside a default grace period | Test |
 | Closing twice does not throw | Test — a second signal must not fail the exit |
+| Readiness refuses as soon as a shutdown starts | Test |
+| Liveness keeps answering, so nothing kills it mid-drain | Test |
+| The pause actually happens | Test — measured, because ordering alone cannot see it |
 
-Four mutations, all caught, including exiting before the drain finishes — the
-version of this that looks right and does nothing.
+Eight mutations, all caught, including exiting before the drain finishes and
+deleting the pause — the second passed every other test here, because ordering
+holds whether the wait is there or not. It has its own measured test now.
+
+Writing these also surfaced leakage in the tests themselves: the shutdown flag
+lives on the module, and the two cases that call `shutdown()` left it set, so a
+later case saw a server already draining. Reset before each case rather than
+after, so one that throws cannot poison the next.
 
 ### Built, tested, and unreachable — swept systematically
 
@@ -1444,7 +1470,7 @@ Nothing here rests on being believed.
 
 ```bash
 npm install
-npm test --workspaces                      # 584 tests: 53 core, 98 og, 276 api, 157 web
+npm test --workspaces                      # 587 tests: 53 core, 98 og, 279 api, 157 web
 npm run typecheck --workspaces             # four packages, strict
 npm audit --omit=dev                       # 0 production vulnerabilities
 cd packages/contracts && forge test        # 116 tests
