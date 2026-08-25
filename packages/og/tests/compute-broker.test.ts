@@ -12,12 +12,14 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   chooseService,
+  clientModelChain,
   createBrokerClient,
   listChatServices,
   readService,
   type ComputeService,
   type InferenceBroker,
 } from '../src/compute-broker.ts'
+import { complete } from '../src/router.ts'
 
 /** Shaped exactly as `listService` returns it — positional, not named. */
 function tuple(over: Partial<ComputeService> = {}): unknown[] {
@@ -181,6 +183,76 @@ test('a failed settlement is reported, and does not eat the answer', async () =>
     // stops answering, so this must never be silent.
     assert.equal(failures.length, 1)
     assert.match(String((failures[0] as Error).message), /chain write failed/)
+  } finally {
+    globalThis.fetch = original
+  }
+})
+
+test('a broker client carries its own model chain, so no caller has to know', async () => {
+  /*
+   * This is the defect that shipped. The task chains name Router models; a
+   * provider reached directly serves its own and has never heard of them. The
+   * fix existed — an option on `complete` — and every call site had to remember
+   * to pass it. None did, so broker mode would have sent a model that does not
+   * exist there and failed through the entire chain on every request.
+   *
+   * The chain travels with the client now. Forgetting is no longer possible.
+   */
+  const service = readService(tuple())
+
+  const client = createBrokerClient({
+    broker: { getRequestHeaders: async () => ({}) } as unknown as InferenceBroker,
+    provider: service.provider,
+    endpoint: 'https://provider.example/v1/proxy',
+    service,
+  })
+
+  const chain = clientModelChain(client)
+  assert.ok(chain, 'the client must carry a chain')
+  assert.equal(chain!.length, 1)
+  assert.equal(chain![0]!.id, 'qwen/qwen2.5-omni-7b', 'and it must name the provider own model')
+})
+
+test('complete uses the client chain without being told to', async () => {
+  const service = readService(tuple())
+  const asked: string[] = []
+
+  const original = globalThis.fetch
+  globalThis.fetch = (async (_url: unknown, init?: { body?: string }) => {
+    asked.push(JSON.parse(init?.body ?? '{}').model)
+    return new Response(
+      JSON.stringify({
+        id: 'x',
+        choices: [{ message: { role: 'assistant', content: 'ok' }, finish_reason: 'stop', index: 0 }],
+        usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+        model: service.model,
+        object: 'chat.completion',
+        created: 0,
+      }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    )
+  }) as typeof fetch
+
+  try {
+    const client = createBrokerClient({
+      broker: {
+        getRequestHeaders: async () => ({}),
+        processResponse: async () => undefined,
+      } as unknown as InferenceBroker,
+      provider: service.provider,
+      endpoint: 'https://provider.example/v1/proxy',
+      service,
+    })
+
+    // No `models` option — exactly how every route in the product calls it.
+    const result = await complete(client, {
+      task: 'coach',
+      verifyTee: false,
+      messages: [{ role: 'user', content: 'hello' }],
+    })
+
+    assert.deepEqual(asked, [service.model], 'the provider own model must be requested')
+    assert.equal(result.model, service.model)
   } finally {
     globalThis.fetch = original
   }

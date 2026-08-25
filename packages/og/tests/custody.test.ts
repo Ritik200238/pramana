@@ -112,3 +112,29 @@ test('a stored address verifies a phrase without the server ever holding one', (
   // and lowercased from others.
   assert.equal(phraseMatchesAddress(key.phrase, key.address.toLowerCase()), true)
 })
+
+test('the same words reach the same account here as in the browser', () => {
+  /*
+   * Two implementations, one answer required.
+   *
+   * The phrase is generated in the browser, because it must never leave the
+   * device; this package is written for Node and derives the same key
+   * server-side. If the two ever diverge — a different path, a different
+   * normalisation — the browser hands the server an address it cannot verify,
+   * and the person is locked out of their own records with no way back.
+   *
+   * The same fixed vector is pinned in apps/web/tests/custody-key.test.ts. It is
+   * the standard test mnemonic, published everywhere, and the address is the one
+   * every wallet agrees on. Either implementation drifting fails one of these.
+   *
+   * This was written down as an assumption before it was written down as a
+   * test, which is the shape of nearly every defect found in this repository.
+   */
+  const SHARED_PHRASE = 'test test test test test test test test test test test junk'
+  const SHARED_ADDRESS = '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266'
+
+  assert.equal(fromPhrase(SHARED_PHRASE).address, SHARED_ADDRESS)
+
+  // And the check the server actually performs agrees with it.
+  assert.equal(phraseMatchesAddress(SHARED_PHRASE, SHARED_ADDRESS), true)
+})

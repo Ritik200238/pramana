@@ -18,6 +18,7 @@
  */
 
 import OpenAI from 'openai'
+import { clientModelChain } from './compute-broker.ts'
 import { CHAINS, type ModelSpec, type TaskName } from './models.ts'
 import { readTrace, readReceipt, type AttestationReceipt } from './attestation.ts'
 
@@ -164,7 +165,17 @@ export async function complete(
   client: OpenAI,
   opts: CompleteOptions,
 ): Promise<CompleteResult> {
-  const chain: readonly ModelSpec[] = opts.models ?? CHAINS[opts.task]
+  /*
+   * Explicit override first, then whatever the client carries, then the task's
+   * own chain.
+   *
+   * The middle one is why broker mode works at all: the task chains name Router
+   * models, and a provider reached directly serves its own. Leaving that to an
+   * option each caller had to remember meant it shipped forgotten, and every
+   * request in that mode would have named a model that does not exist there.
+   */
+  const chain: readonly ModelSpec[] =
+    opts.models ?? clientModelChain(client) ?? CHAINS[opts.task]
   const attempts: Array<{ model: string; error: string }> = []
 
   for (const [index, model] of chain.entries()) {

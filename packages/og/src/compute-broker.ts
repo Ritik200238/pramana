@@ -109,6 +109,14 @@ export interface BrokerClientOptions {
   /** The provider to talk to. Discover one with `listChatServices`/`chooseService`. */
   provider: string
   endpoint: string
+  /**
+   * The marketplace record for this provider.
+   *
+   * Supplying it attaches the provider's own model chain to the client, so
+   * `complete` uses the right model without every caller having to know which
+   * path the deployment took.
+   */
+  service?: ComputeService
   timeoutMs?: number
   /**
    * Settlement is what actually pays the provider. It is awaited by default so
@@ -126,6 +134,23 @@ export interface BrokerClientOptions {
  * reused — they are produced per call, inside `fetch`, where the body is
  * finally known.
  */
+/**
+ * Where a client's own model chain is kept.
+ *
+ * A symbol so it cannot collide with anything the SDK has, and attached to the
+ * client rather than passed at each call because every call site would
+ * otherwise have to know which path this deployment took. One did not, which is
+ * the entire reason this exists: broker mode shipped sending Router model names
+ * to a provider that had never heard of them, and every request would have
+ * failed through the whole chain.
+ */
+const CHAIN = Symbol.for('ogt.modelChain')
+
+/** The chain a client was built with, if it carries one. */
+export function clientModelChain(client: unknown): readonly ModelSpec[] | undefined {
+  return (client as Record<symbol, readonly ModelSpec[] | undefined>)[CHAIN]
+}
+
 export function createBrokerClient(options: BrokerClientOptions): OpenAI {
   const { broker, provider, endpoint } = options
   const settle = options.settle ?? true
@@ -176,7 +201,7 @@ export function createBrokerClient(options: BrokerClientOptions): OpenAI {
     return response
   }
 
-  return new OpenAI({
+  const client = new OpenAI({
     // The broker signs requests; there is no API key in this path. The SDK
     // requires the field to be present.
     apiKey: 'unused-broker-auth',
@@ -185,6 +210,23 @@ export function createBrokerClient(options: BrokerClientOptions): OpenAI {
     maxRetries: 0,
     fetch: brokerFetch,
   })
+
+  /*
+   * The chain travels with the client.
+   *
+   * The task chains name Router models. This provider serves its own and knows
+   * nothing about those names, so without this every call would send a model
+   * that does not exist here — which is exactly what shipped, because the fix
+   * for it lived in an option every call site had to remember to pass.
+   */
+  if (options.service) {
+    Object.defineProperty(client, CHAIN, {
+      value: serviceChain(options.service),
+      enumerable: false,
+    })
+  }
+
+  return client
 }
 
 /**

@@ -391,6 +391,42 @@ hides. Records written *before* taking custody stay under the key we held; this
 applies going forward. And there is no reset: lose the words and those records
 stay closed.
 
+### Built, tested, and unreachable — swept systematically
+
+    npm test -w @ogt/api    # tests/reachable-backend.test.ts
+
+The most expensive defect here is not broken code. It is correct, tested code
+that nothing calls, and it has appeared often enough to be a pattern rather than
+bad luck: the anchor worker, the coach contract, the blood-report screen, the
+facts list, `snapshotAt`, and the wallet-paid inference path — twice.
+
+Every one had passing tests. **Coverage says nothing about reachability.**
+
+So it is now asked directly: for each capability `packages/og` offers, does the
+product use it? "No" is allowed and has to carry a reason, which turns a silent
+gap into a decision somebody made. The exemption list is checked in turn, so an
+entry for a deleted export fails rather than lingering as a sentence pretending
+to be a decision.
+
+**The sweep immediately found that broker mode was broken in production.**
+`complete` resolves models from the task chains, which name Router models; a
+provider reached directly serves its own and has never heard of them. The fix
+existed — a `models` option — and every call site had to remember to pass it.
+None did. Broker mode would have named a nonexistent model on every request and
+failed through the entire chain.
+
+The chain travels with the client now, so forgetting is no longer possible.
+
+**And a claim written in the same sitting turned out to be false.** An exemption
+said the browser and server key derivations were "pinned to one vector by a
+test". No such test existed. The phrase is generated in the browser and the
+address is verified by the server, so a divergence — a different path, a
+different normalisation — locks somebody out of their own records permanently.
+Both are now pinned to the same published vector, and drifting either one fails:
+
+    og drifts   -> 2 failures
+    web drifts  -> 3 failures
+
 ### The wallet-paid path is now selectable, which it was not
 
     npm test -w @ogt/api    # tests/inference-mode.test.ts
@@ -1373,7 +1409,7 @@ Nothing here rests on being believed.
 
 ```bash
 npm install
-npm test --workspaces                      # 572 tests: 53 core, 95 og, 267 api, 157 web
+npm test --workspaces                      # 578 tests: 53 core, 98 og, 270 api, 157 web
 npm run typecheck --workspaces             # four packages, strict
 npm audit --omit=dev                       # 0 production vulnerabilities
 cd packages/contracts && forge test        # 116 tests

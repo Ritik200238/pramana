@@ -142,6 +142,9 @@ async function buildBrokerClient(
     broker: broker.inference,
     provider: service.provider,
     endpoint,
+    // Carries the provider's own model chain, so no route has to know which
+    // path this deployment took.
+    service,
     // Unsettled fees accumulate until a provider stops answering, so a failure
     // here has to be visible rather than swallowed.
     onSettleError: (error) => log.error({ err: error }, 'settling an inference fee failed'),
