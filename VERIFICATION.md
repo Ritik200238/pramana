@@ -391,6 +391,41 @@ hides. Records written *before* taking custody stay under the key we held; this
 applies going forward. And there is no reset: lose the words and those records
 stay closed.
 
+### Being told to stop
+
+    npm test -w @ogt/api    # tests/shutdown.test.ts
+
+There was no signal handling at all. Every deploy killed the process outright:
+requests in flight were dropped, the `onClose` hook never ran, and the
+connection pool was never drained.
+
+**The chain was never at risk**, and that is worth stating precisely rather than
+assumed. An anchor carries a deterministic nonce the contract refuses a second
+time, and Postgres releases the advisory lock when the holder's connection dies
+— both verified elsewhere in this file. A worker killed mid-pass leaves a
+snapshot pending, and the next pass's `nonceUsed` recovery path records it
+without anchoring twice.
+
+What was lost was somebody's request. The offline queue retries with the same
+idempotency key, so nothing vanished permanently; it simply looked to them like
+the app had failed, which is its own cost and an avoidable one.
+
+SIGTERM and SIGINT now drain through `app.close()` — which runs the hook, stops
+the workers and empties the pool — then exit zero. A deadline of 25 seconds sits
+inside the 30 an orchestrator typically allows, because a shutdown that hangs
+gets SIGKILL and takes everything still in flight with it.
+
+| Property | Proved by |
+|---|---|
+| A clean shutdown closes, then exits zero, in that order | Test, with an injected exit |
+| A close that throws still exits, and says it failed | Test |
+| Both deploy signals are handled, not just Ctrl-C | Test |
+| The deadline is inside a default grace period | Test |
+| Closing twice does not throw | Test — a second signal must not fail the exit |
+
+Four mutations, all caught, including exiting before the drain finishes — the
+version of this that looks right and does nothing.
+
 ### Built, tested, and unreachable — swept systematically
 
     npm test -w @ogt/api    # tests/reachable-backend.test.ts
@@ -1409,7 +1444,7 @@ Nothing here rests on being believed.
 
 ```bash
 npm install
-npm test --workspaces                      # 578 tests: 53 core, 98 og, 270 api, 157 web
+npm test --workspaces                      # 584 tests: 53 core, 98 og, 276 api, 157 web
 npm run typecheck --workspaces             # four packages, strict
 npm audit --omit=dev                       # 0 production vulnerabilities
 cd packages/contracts && forge test        # 116 tests

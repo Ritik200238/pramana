@@ -527,8 +527,80 @@ export async function buildServer(overrides: ServerOverrides = {}) {
 
 const isEntrypoint = process.argv[1] !== undefined && import.meta.url.endsWith(process.argv[1].replace(/\\/g, '/'))
 
+/**
+ * How long a shutdown may take before it stops being graceful.
+ *
+ * Long enough for a meal commit to finish — the slowest thing on a request
+ * path is a model call, and those carry their own thirty-second timeout — and
+ * short enough to stay inside the window an orchestrator allows before it sends
+ * SIGKILL. Kubernetes defaults to thirty seconds.
+ */
+const SHUTDOWN_GRACE_MS = 25_000
+
+/**
+ * Stop taking new work, let what is running finish, then close.
+ *
+ * There was no signal handling here at all, so every deploy killed the process
+ * outright: requests in flight were dropped, `onClose` never ran, and the
+ * connection pool was never drained.
+ *
+ * The chain was never at risk — an anchor carries a deterministic nonce the
+ * contract refuses twice, and Postgres frees the advisory lock when the holder
+ * dies — but somebody's meal commit vanished mid-request. The offline queue
+ * retries with the same idempotency key, so nothing was lost permanently; it
+ * looked to them like the app failed, which is its own kind of cost.
+ */
+export async function shutdown(
+  app: Pick<Awaited<ReturnType<typeof buildServer>>['app'], 'close' | 'log'>,
+  signal: string,
+  /*
+   * Injected so a test can watch what happens without ending its own process.
+   * The alternative is asserting against the source, which this session has
+   * repeatedly shown can be satisfied without the behaviour being there.
+   */
+  exit: (code: number) => void = (code) => process.exit(code),
+): Promise<void> {
+  app.log.info({ signal }, 'shutting down; finishing what is in flight')
+
+  const forced = setTimeout(() => {
+    // A request that will not finish must not hold the deploy open until the
+    // orchestrator loses patience and sends SIGKILL, which drops everything
+    // else with it.
+    app.log.error({ signal }, 'shutdown took too long; exiting anyway')
+    exit(1)
+  }, SHUTDOWN_GRACE_MS)
+
+  // Does not keep the process alive on its own account.
+  forced.unref()
+
+  try {
+    // Runs the onClose hook: workers stopped, pool drained.
+    await app.close()
+    app.log.info('shut down cleanly')
+    exit(0)
+  } catch (error) {
+    app.log.error({ err: error }, 'shutdown failed')
+    exit(1)
+  }
+}
+
 if (isEntrypoint) {
   const { app, config } = await buildServer()
+
+  /*
+   * SIGTERM is what an orchestrator sends on a deploy; SIGINT is Ctrl-C. Both
+   * mean the same thing here, and both were previously unhandled.
+   *
+   * `once` rather than `on`: a second signal while a shutdown is already
+   * running is somebody being impatient, and starting a second one would race
+   * the first.
+   */
+  for (const signal of ['SIGTERM', 'SIGINT'] as const) {
+    process.once(signal, () => {
+      void shutdown(app, signal)
+    })
+  }
+
   try {
     await app.listen({ port: config.PORT, host: config.HOST })
   } catch (error) {
