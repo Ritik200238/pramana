@@ -50,10 +50,17 @@ echo "    ${EXPLORER}/address/${COACH}"
 # ---------------------------------------------------------------- prove it works
 
 echo
+# 0G enforces a minimum priority fee of 2 gwei, and `cast` defaults to a 1 wei
+# tip, which the node rejects outright. Anvil accepted it, so a fork could never
+# have shown this — only a real broadcast does.
+#
+# The application clients are unaffected: ethers reads the chain's own fee data,
+# which reports 4 gwei. This was a cast default in a shell script, not a product
+# setting, and checking that before changing the clients avoided a pointless fix.
 echo "==> Anchoring a snapshot on the live chain"
 cast send "$ANCHOR" "anchorSnapshot(bytes32[],uint32)" \
   "[0x1111111111111111111111111111111111111111111111111111111111111111]" 1 \
-  --private-key "$PRIVATE_KEY" --rpc-url "$RPC" >/dev/null
+  --private-key "$PRIVATE_KEY" --rpc-url "$RPC" --priority-gas-price 2gwei >/dev/null
 
 COUNT=$(cast call "$ANCHOR" "snapshotCount(address)(uint256)" "$ADDRESS" --rpc-url "$RPC")
 echo "    snapshotCount = ${COUNT}"
@@ -62,7 +69,7 @@ echo "==> Minting a coach on the live chain"
 cast send "$COACH" "mintCoach(bytes32,bytes32,uint32)" \
   0x2222222222222222222222222222222222222222222222222222222222222222 \
   0x3333333333333333333333333333333333333333333333333333333333333333 1 \
-  --private-key "$PRIVATE_KEY" --rpc-url "$RPC" >/dev/null
+  --private-key "$PRIVATE_KEY" --rpc-url "$RPC" --priority-gas-price 2gwei >/dev/null
 
 OWNER=$(cast call "$COACH" "ownerOf(uint256)(address)" 1 --rpc-url "$RPC")
 echo "    ownerOf(1) = ${OWNER}"
