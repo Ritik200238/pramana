@@ -391,6 +391,42 @@ hides. Records written *before* taking custody stay under the key we held; this
 applies going forward. And there is no reset: lose the words and those records
 stay closed.
 
+### A signed-in stranger reaching for somebody else's record
+
+    npm test -w @ogt/api    # tests/hostile-caller.test.ts
+
+Anonymous access is covered by a test that enumerates the server's own route
+table, so a new route inherits the check without anybody remembering. This is
+the half enumeration cannot do: a caller with a valid session, using a valid
+endpoint, passing an id that is not theirs.
+
+Every one of these is a single missing `eq(table.userId, userId)` away from
+being real. Each case asserts twice — that the request is refused, and that the
+victim's data is untouched — because a refusal that still had an effect is the
+worst of both.
+
+| Attempt | Also asserted |
+|---|---|
+| Correct somebody else's meal item | Their grams and portion unchanged |
+| Repeat somebody else's meal into your own day | Nothing copied across — a success would disclose what they ate |
+| Close somebody else's open topic | Still open; silencing their coach is the harm `resolved_at` exists to prevent |
+| Attach a signature to somebody else's snapshot | Nothing unverified stored |
+| Read somebody else's pending anchors | No root hash crosses — that is a retrieval key, not metadata |
+| Take custody as somebody else | Their key unmoved; it would lock them out permanently |
+
+**Three of these six were inert when first written, and the mutation pass is the
+only reason that is known.** The correction test used `POST` where the route is
+`PATCH`, and a field the schema does not accept — so it 404'd on the verb and
+passed against a build with the ownership check deleted. The two anchor tests
+had an attacker who had not taken custody, so both routes returned early at the
+caller-side gate and never reached the snapshot lookup. The signature test then
+had a second layer of the same problem: the attacker signed with an unrelated
+key, so the route refused with `wrong_signer` regardless.
+
+All three now exercise what they claim, and each of the five ownership clauses
+fails the suite when removed. A test that passes for the wrong reason is worse
+than no test, because it is counted.
+
 ### Prompt injection — user text reaching a system prompt
 
     npm test -w @ogt/core   # tests/untrusted.test.ts
@@ -930,7 +966,7 @@ Nothing here rests on being believed.
 
 ```bash
 npm install
-npm test --workspaces                      # 498 tests: 53 core, 91 og, 231 api, 123 web
+npm test --workspaces                      # 504 tests: 53 core, 91 og, 237 api, 123 web
 npm run typecheck --workspaces             # four packages, strict
 npm audit --omit=dev                       # 0 production vulnerabilities
 cd packages/contracts && forge test        # 116 tests
