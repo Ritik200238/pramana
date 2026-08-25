@@ -391,6 +391,40 @@ hides. Records written *before* taking custody stay under the key we held; this
 applies going forward. And there is no reset: lose the words and those records
 stay closed.
 
+### Smart contracts — static analysis, and the one real finding
+
+    cd packages/contracts && forge test && forge coverage --report summary
+    slither .
+
+**116 tests. 100% line, statement, branch and function coverage** on both
+contracts — not merely lines executed, but every branch taken.
+
+Slither found one genuine defect in our own code, and it is worth recording
+rather than quietly fixing:
+
+**`reentrancy-no-eth` in `CoachAgent.cloneCoach`.** `_safeMint` calls
+`onERC721Received` on the recipient, handing control to arbitrary code in the
+middle of the function — and the brain was written *after* that call. For the
+length of the callback a token existed that owned nothing: `currentBrain`
+reverted on an empty array, `versionCount` read zero, and anything built on "a
+coach has a brain" was wrong.
+
+`_mintCoach` had the identical shape and **was not flagged**, because it is
+private and the detector reached the external path. That is the useful lesson: a
+static analyser reports what it reaches, not everything that is there. Both were
+reordered — effects before interactions.
+
+Proved by three tests that reenter on purpose, with a receiver that reads the
+coach it is being handed from inside the callback. Checked by restoring the old
+ordering: two of the three fail. Slither is now clean on our code.
+
+Two findings remain and both are noise, named so nobody re-investigates them:
+
+| Finding | Why it is not a defect |
+|---|---|
+| `Math.mulDiv` divide-before-multiply | OpenZeppelin library; the well-known intentional pattern in its 512-bit division |
+| `_snapshots is never initialized` | It is a `mapping`, zero-valued by definition in Solidity and filled by `push` |
+
 ### Dependencies
 
 `npm audit --omit=dev` reports **0 vulnerabilities**. Dev dependencies carry
@@ -854,7 +888,7 @@ npm install
 npm test --workspaces                      # 486 tests: 45 core, 91 og, 227 api, 123 web
 npm run typecheck --workspaces             # four packages, strict
 npm audit --omit=dev                       # 0 production vulnerabilities
-cd packages/contracts && forge test        # 113 tests
+cd packages/contracts && forge test        # 116 tests
 npm run bench -w @ogt/api                  # query plans, fails if one degrades
 ```
 

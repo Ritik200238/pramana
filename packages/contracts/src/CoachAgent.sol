@@ -217,8 +217,20 @@ contract CoachAgent is ERC721, AccessControl, Pausable, EIP712 {
         if (metadataHash == bytes32(0)) revert EmptyMetadataHash();
 
         tokenId = _nextTokenId++;
-        _safeMint(owner, tokenId);
 
+        /*
+         * The brain is written before the token is minted, not after.
+         *
+         * `_safeMint` calls `onERC721Received` on the recipient, which hands
+         * control to arbitrary code while this function is half finished. With
+         * the push afterwards, that code sees a token that exists and owns
+         * nothing: `currentBrain` reverts on an empty array, `versionCount`
+         * reads zero, and anything integrating against "a coach has a brain"
+         * is wrong for the length of the callback.
+         *
+         * Effects before interactions. Writing our own mapping before the
+         * token exists is harmless; letting somebody observe the gap is not.
+         */
         _brains[tokenId].push(
             Brain({
                 rootHash: rootHash,
@@ -228,6 +240,8 @@ contract CoachAgent is ERC721, AccessControl, Pausable, EIP712 {
                 createdAt: uint64(block.timestamp)
             })
         );
+
+        _safeMint(owner, tokenId);
 
         emit CoachMinted(owner, tokenId, rootHash, schemaVersion);
     }
@@ -430,8 +444,10 @@ contract CoachAgent is ERC721, AccessControl, Pausable, EIP712 {
         Brain storage source = _brains[tokenId][_brains[tokenId].length - 1];
 
         newTokenId = _nextTokenId++;
-        _safeMint(to, newTokenId);
 
+        // Effects before the interaction, for the same reason as `_mintCoach`:
+        // `_safeMint` hands control to the recipient, and it must not be able
+        // to observe a coach that exists without a brain.
         _brains[newTokenId].push(
             Brain({
                 rootHash: newRootHash,
@@ -441,6 +457,8 @@ contract CoachAgent is ERC721, AccessControl, Pausable, EIP712 {
                 createdAt: uint64(block.timestamp)
             })
         );
+
+        _safeMint(to, newTokenId);
 
         emit CoachCloned(tokenId, newTokenId, to);
         emit CoachMinted(to, newTokenId, newRootHash, source.schemaVersion);
