@@ -17,6 +17,7 @@ import { AnchorClient, deriveOwnerAccount } from '@ogt/og'
 import type { FastifyBaseLogger } from 'fastify'
 import { ethers } from 'ethers'
 import type { Database } from '../db/index.ts'
+import type { PassLock } from './pass-lock.ts'
 import { snapshots } from '../db/schema.ts'
 import { findPendingAnchors } from './scheduler.ts'
 
@@ -36,6 +37,11 @@ export interface AnchorWorkerOptions {
    * early leaves the backlog intact and says so once.
    */
   minimumBalanceWei?: bigint
+  /**
+   * Excludes other instances from this pass. Absent means single-instance
+   * behaviour, which is what the tests and a one-container deployment want.
+   */
+  lock?: PassLock | undefined
 }
 
 export interface AnchorWorker {
@@ -58,7 +64,22 @@ export function startAnchorWorker(options: AnchorWorkerOptions): AnchorWorker {
     if (running) return { attempted: 0, anchored: 0, failed: 0 }
     running = true
 
+    /*
+     * The boolean above covers this process. Another instance has its own, so
+     * the lock is what actually keeps two of them out of the same pass.
+     */
+    let release: (() => Promise<void>) | null = null
+
     try {
+      if (options.lock) {
+        release = await options.lock('anchor')
+        if (release === null) {
+          // Somebody else is mid-pass. Nothing is lost by standing down: the
+          // work is still queued and they are doing it.
+          return { attempted: 0, anchored: 0, failed: 0 }
+        }
+      }
+
       const pending = await findPendingAnchors(options.db, batchSize)
       if (pending.length === 0) return { attempted: 0, anchored: 0, failed: 0 }
 
@@ -142,6 +163,11 @@ export function startAnchorWorker(options: AnchorWorkerOptions): AnchorWorker {
 
       return { attempted: pending.length, anchored, failed }
     } finally {
+      if (release) {
+        // Held to the end of the pass on purpose: releasing early would let a
+        // second instance start while this one is still writing.
+        await release()
+      }
       running = false
     }
   }

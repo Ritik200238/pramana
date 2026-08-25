@@ -16,6 +16,7 @@ import { and, gte, isNull, sql } from 'drizzle-orm'
 import type { OGStorage } from '@ogt/og'
 import type { FastifyBaseLogger } from 'fastify'
 import type { Database } from '../db/index.ts'
+import type { PassLock } from './pass-lock.ts'
 import { snapshots, users } from '../db/schema.ts'
 import { runSnapshot } from './snapshot.ts'
 import { ensureRecordKey } from '../services/record-key.ts'
@@ -34,6 +35,11 @@ export interface SchedulerOptions {
   intervalMs?: number
   /** Users per pass. Keeps a backlog from monopolising the process. */
   batchSize?: number
+  /**
+   * Excludes other instances from this pass. Absent means single-instance
+   * behaviour, which is what the tests and a one-container deployment want.
+   */
+  lock?: PassLock | undefined
 }
 
 export interface Scheduler {
@@ -56,7 +62,22 @@ export function startScheduler(options: SchedulerOptions): Scheduler {
     if (running) return { attempted: 0, succeeded: 0, failed: 0 }
     running = true
 
+    /*
+     * The boolean above covers this process. Another instance has its own, so
+     * the lock is what actually keeps two of them out of the same pass.
+     */
+    let release: (() => Promise<void>) | null = null
+
     try {
+      if (options.lock) {
+        release = await options.lock('scheduler')
+        if (release === null) {
+          // Somebody else is mid-pass. Nothing is lost by standing down: the
+          // work is still queued and they are doing it.
+          return { attempted: 0, succeeded: 0, failed: 0 }
+        }
+      }
+
       /*
        * Housekeeping first, before any early return.
        *
@@ -123,6 +144,11 @@ export function startScheduler(options: SchedulerOptions): Scheduler {
 
       return { attempted: due.length, succeeded, failed }
     } finally {
+      if (release) {
+        // Held to the end of the pass on purpose: releasing early would let a
+        // second instance start while this one is still writing.
+        await release()
+      }
       running = false
     }
   }

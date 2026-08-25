@@ -34,6 +34,7 @@ import { registerCoachRoutes } from './routes/coach.ts'
 import { startScheduler } from './jobs/scheduler.ts'
 import { startAnchorWorker } from './jobs/anchor.ts'
 import { startCoachWorker } from './jobs/coach-brain.ts'
+import { postgresPassLock } from './jobs/pass-lock.ts'
 import { startBalanceWatch } from './jobs/balance.ts'
 import { authPlugin } from './plugins/auth.ts'
 import { idempotencyPlugin } from './plugins/idempotency.ts'
@@ -255,6 +256,16 @@ export async function buildServer(overrides: ServerOverrides = {}) {
     return reply.status(500).send({ error: 'internal_error' })
   })
 
+  /*
+   * Cross-instance exclusion for the background passes.
+   *
+   * Only when this server owns its connection: an injected database is a test
+   * or an embedded one, where there is no second instance to exclude and no
+   * pool to reserve from. Without a lock the workers behave exactly as they
+   * did, which is correct for one instance and only for one.
+   */
+  const passLock = owned ? postgresPassLock(owned.sql) : undefined
+
   // 0G Storage snapshots. Without this the encrypted user-owned record is a
   // claim rather than a mechanism — the code existed but nothing ran it.
   const scheduler = startScheduler({
@@ -262,6 +273,7 @@ export async function buildServer(overrides: ServerOverrides = {}) {
     storage,
     masterSeed: config.OG_ANCHOR_MASTER_SEED,
     logger: app.log,
+    lock: passLock,
   })
   if (overrides.backgroundJobs === false) scheduler.stop()
 
@@ -286,6 +298,7 @@ export async function buildServer(overrides: ServerOverrides = {}) {
           }),
           masterSeed: config.OG_ANCHOR_MASTER_SEED,
           logger: app.log,
+          lock: passLock,
         })
       : null
 
@@ -311,6 +324,7 @@ export async function buildServer(overrides: ServerOverrides = {}) {
           }),
           masterSeed: config.OG_ANCHOR_MASTER_SEED,
           logger: app.log,
+          lock: passLock,
         })
       : null
 
