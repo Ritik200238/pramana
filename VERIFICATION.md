@@ -309,12 +309,21 @@ unlocking through the pool instead of the held connection, granting a lock
 Postgres refused, and never releasing — each fail the suite; reverting each
 turns it green again.
 
-**NOT VERIFIED:** contention between two real Postgres sessions. There is no
-Postgres server and no Docker on the machine this was built on, and PGlite is
-single-session, so the protocol is proved against a recording pool rather than
-against two connections genuinely competing. The remaining risk is confined to
-whether `pg_try_advisory_lock` behaves as documented, not to whether this code
-calls it correctly.
+**NOT VERIFIED here, but now checkable anywhere:**
+
+    DATABASE_URL=postgres://... npm run test:locks -w @ogt/api
+
+It asserts the premise the fix rests on — a second session is refused the lock
+the first holds, a different worker's lock is unaffected, the lock is visible in
+`pg_locks`, and releasing genuinely frees it. Without a `DATABASE_URL` it skips
+loudly.
+
+It was attempted on the machine this was built on, with an embedded PostgreSQL
+18 rather than accepting the absence of Docker as an answer. `initdb` succeeded
+and the server reached "ready to accept connections", then a background worker
+died with `0xC0000142` — a DLL initialisation failure in that sandbox, not a
+fault in this code. So what ships is a test that travels to a machine which can
+run it, rather than a result claimed from one that could not.
 
 Deliberately not wrapped in a transaction. A pass that threw would roll back
 snapshot rows whose uploads have already been paid for and cannot roll back.
@@ -332,34 +341,50 @@ These are the honest gaps. Each says what is missing and what would close it.
 
 ### Inference against the live Router
 
-**Status: not run.** Every model call in the test suites is answered by a stub.
+**Still NOT VERIFIED, but no longer for the reason recorded here before.**
 
-The Router's catalogue endpoint is public and is verified above, but
-`POST /v1/chat/completions` requires a funded inference key (`sk-`) created at
-pc.0g.ai against a wallet holding 0G. Without one we have not measured:
+This said inference was blocked on an `sk-` key that only a person can create at
+pc.0g.ai. That was wrong, and wrong in the direction that matters: it made a gap
+look like somebody else's problem.
 
-- whether meal photographs are read accurately, or how often a question is
-  needed (the product's central metric — median questions per meal below 0.3 by
-  week 4),
-- real latency for a photo round trip,
-- real cost per meal,
-- whether `verify_tee: true` returns the attestation receipt we parse, against a
-  live provider rather than a fixture.
+0G documents a second path, and it needs no key at all. The broker discovers
+providers from the on-chain marketplace, signs each request with the wallet's
+own key, and settles the fee on 0G Chain. Verified live, today:
 
-That last one matters most: TEE verification is the binding that makes 0G
-irremovable from this product, and it has been verified only in unit tests.
+| | |
+|---|---|
+| Providers listed | 2, both TEE-attested |
+| Chat provider | `0xa48f01287233509FD694a22Bf840225062E67836` |
+| Model | `qwen/qwen2.5-omni-7b` — text, image and audio in one model |
+| Attestation | `TeeML` / dstack, [public verifier](https://github.com/Dstack-TEE/dstack/releases/tag/verifier-v0.5.8) |
+| Price | 1.04e12 neuron in, 4.18e12 neuron out |
+| Ledger | created on chain, tx `0x0cd5e5ac01cc22765fcf204cce437c5ef1f6dd2d2be7992f9ad3d4bbdda2b2ce` |
+| Provider acknowledged | yes |
 
-The harness is written and waiting. `packages/og/tests/live/inference.test.ts`
-asserts that a real request returns a verified TEE receipt naming the provider
-that ran it, that the meal-vision path attests, and that every chain answers.
-Without a key those four cases **skip loudly** rather than passing quietly — a
-suite that goes green because it did nothing is worse than one that fails.
+What remains is **funding, not access**. The provider requires 1 0G locked in its
+sub-account before it answers:
 
-**To close it:** a funded `sk-` key, then
-
-```bash
-OG_ROUTER_API_KEY=sk-... npm run test:live -w @ogt/og
 ```
+insufficient balance: your locked balance is 0.010000 0G, but the required
+minimum is 1.000000 0G (breakdown: minimum reserve 1.000000 0G + unsettled
+fees 0.000000 0G + current request fee 0.000000 0G)
+```
+
+The wallet holds ~0.35 0G with 0.1 0G in the ledger. **Roughly 0.7 0G more — two
+faucet claims — and the call runs.**
+
+    npm run test:compute -w @ogt/og
+
+Discovery already passes live. The inference case skips with the shortfall
+printed, and asserts what the product depends on rather than that a string came
+back: that the model holds a JSON contract, that the numbers are numbers, that
+the answer is plausible for dal and two rotis, and that the fee settled with no
+error.
+
+The Router path (`sk-` key) remains supported and is still the simpler operational
+default. Both are wired behind the same OpenAI-shaped surface, so the model
+chain, JSON-schema decoding, cost accounting and failover work against either.
+
 
 ### Contracts on the live network — CLOSED
 
