@@ -188,3 +188,91 @@ test('a meal becomes an encrypted record on 0G Storage, anchored on 0G Chain', {
     await close()
   }
 })
+
+test('a coach that learns more evolves on chain', { skip }, async () => {
+  /*
+   * The pass above proves a coach is minted. The worker also evolves one, and
+   * that half had never run against the live contract — the same shape of gap
+   * as the workers themselves, where each part passed and the sequence had
+   * never been performed.
+   */
+  const { db, close } = await freshDatabase()
+
+  try {
+    const [user] = await db
+      .insert(schema.users)
+      .values({ phone: `+9198${Date.now().toString().slice(-8)}`, sex: 'female', ageYears: 31 })
+      .returning({ id: schema.users.id })
+
+    const userId = user!.id
+    await ensureRecordKey(db, SEED!, userId)
+
+    /** One personal food is one thing the coach knows. */
+    const teach = async (from: number, count: number) => {
+      await db.insert(schema.userFoods).values(
+        Array.from({ length: count }, (_, i) => ({
+          userId,
+          name: `dish ${from + i}`,
+          normalisedName: `dish ${from + i}`,
+          unit: 'katori',
+          gramsPerUnit: 150,
+          kcalPer100g: 120,
+          proteinPer100g: 6,
+          carbPer100g: 18,
+          fatPer100g: 2,
+        })),
+      )
+    }
+
+    await teach(0, 3)
+
+    const storage = new OGStorage({ network: NETWORKS.testnet, signerPrivateKey: RELAYER! })
+    const client = new CoachClient({
+      rpcUrl: NETWORKS.testnet.rpcUrl,
+      contractAddress: COACH!,
+      relayerPrivateKey: RELAYER!,
+      chainId: NETWORKS.testnet.chainId,
+    })
+
+    const worker = startCoachWorker({ db, storage, client, masterSeed: SEED!, logger })
+    worker.stop()
+
+    const minted = await worker.runOnce()
+    assert.equal(minted.minted, 1)
+
+    const [afterMint] = await db
+      .select({ tokenId: schema.users.coachTokenId, learned: schema.users.coachLearnedCount })
+      .from(schema.users)
+    const tokenId = afterMint!.tokenId!
+    console.log(`  minted token ${tokenId} knowing ${afterMint!.learned}`)
+
+    // Below the threshold: a chain write per correction would put a transaction
+    // in the middle of somebody fixing a portion size.
+    await teach(100, 5)
+    const tooSoon = await worker.runOnce()
+    assert.equal(tooSoon.evolved, 0, 'five more is not worth a transaction')
+    assert.equal(await client.versionCount(tokenId), 1)
+
+    // Past it.
+    await teach(200, 10)
+    const evolved = await worker.runOnce()
+    console.log(`  evolve pass: ${JSON.stringify(evolved)}`)
+    assert.equal(evolved.evolved, 1, 'enough learning must reach the chain')
+
+    // The claim the product makes — "your coach has learned N things" — is now
+    // a number anybody can read off the chain rather than off our dashboard.
+    assert.equal(await client.versionCount(tokenId), 2)
+
+    const [afterEvolve] = await db
+      .select({ learned: schema.users.coachLearnedCount })
+      .from(schema.users)
+    assert.equal(afterEvolve!.learned, 18)
+    console.log(`  token ${tokenId} now at version 2, knowing ${afterEvolve!.learned}`)
+
+    // And it still belongs to the person, not the account that paid.
+    const owner = deriveOwnerAccount(SEED!, userId)
+    assert.equal(await client.coachCount(owner.address), 1)
+  } finally {
+    await close()
+  }
+})
