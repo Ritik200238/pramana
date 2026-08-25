@@ -391,6 +391,45 @@ hides. Records written *before* taking custody stay under the key we held; this
 applies going forward. And there is no reset: lose the words and those records
 stay closed.
 
+### The offline queue, against storage and a server that misbehave
+
+    npm test -w @ogt/web    # tests/queue-adversarial.test.ts
+
+The queue already had a good suite — replay order, permanent rejections, rate
+limits, expired sessions, idempotency keys, in-flight duplicates. All of it
+assumed storage holds what we put there and the server answers something
+sensible. Neither is safe on the platform this ships to, and offline is not an
+edge case here; it is Tuesday.
+
+Two real defects, both found by probing rather than by reading:
+
+**Valid JSON that is not an array crashed `enqueue`.** `JSON.parse` succeeding
+says only that the string was JSON — another script on the origin, a partial
+write, or an older build could leave anything there. The code cast the result
+and pushed onto it, so a stored `"x"` threw `queue.push is not a function` and
+**lost the meal somebody had just logged**, on the offline path. Storage is now
+validated entry by entry, so one bad row costs one meal rather than the week.
+
+**The queue was unbounded.** localStorage is not: once it is full, every later
+write fails silently, so an uncapped queue does not grow forever — it quietly
+stops accepting the meal in front of the person. Capped at 200, and the *oldest*
+is dropped, because the newest is the one they are looking at and were just told
+was saved.
+
+| Property | Proved by |
+|---|---|
+| Junk in storage does not lose the meal in hand | Test, across five shapes of junk |
+| Unparseable storage is survived | Test |
+| One malformed entry costs one meal, not the queue | Test |
+| The queue is bounded | Test |
+| At the cap the oldest goes, never the newest | Test |
+| An HTML error page with a 200 does not take down the drain | Test |
+| A 500 keeps the meal | Test |
+| Two flushes at once cannot double-count a day | Test — same idempotency key |
+
+Checked by breaking it four ways: the blind cast, no cap, dropping the newest,
+and skipping validation. Each fails the suite.
+
 ### A signed-in stranger reaching for somebody else's record
 
     npm test -w @ogt/api    # tests/hostile-caller.test.ts
@@ -966,7 +1005,7 @@ Nothing here rests on being believed.
 
 ```bash
 npm install
-npm test --workspaces                      # 504 tests: 53 core, 91 og, 237 api, 123 web
+npm test --workspaces                      # 512 tests: 53 core, 91 og, 237 api, 131 web
 npm run typecheck --workspaces             # four packages, strict
 npm audit --omit=dev                       # 0 production vulnerabilities
 cd packages/contracts && forge test        # 116 tests

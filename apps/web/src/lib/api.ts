@@ -748,13 +748,53 @@ interface QueuedRequest {
   userId?: string
 }
 
+/**
+ * How many unsent writes are worth keeping.
+ *
+ * Generous — somebody on a train for a week should not lose a day — and finite,
+ * because localStorage is not. Once it is full every later write fails
+ * silently, so an uncapped queue does not grow forever, it quietly stops
+ * accepting the meal in front of the person instead.
+ */
+const MAX_QUEUED = 200
+
+/**
+ * Read the queue, trusting nothing about what is in storage.
+ *
+ * `JSON.parse` succeeding says only that the string was JSON. It could be a
+ * string, a number, an object — anything another script on this origin, a
+ * partial write, or an older version of this app left behind. The previous
+ * version cast the result and pushed onto it, so a stored `"x"` threw
+ * `queue.push is not a function` out of `enqueue` and lost the meal somebody
+ * had just logged, on the offline path, which is the one that matters most.
+ */
 function readQueue(): QueuedRequest[] {
   try {
     const raw = localStorage.getItem(QUEUE_KEY)
-    return raw ? (JSON.parse(raw) as QueuedRequest[]) : []
+    if (!raw) return []
+
+    const parsed: unknown = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+
+    // Entry by entry, because one bad row should cost one meal rather than all
+    // of them.
+    return parsed.filter(isQueuedRequest)
   } catch {
     return []
   }
+}
+
+function isQueuedRequest(value: unknown): value is QueuedRequest {
+  if (typeof value !== 'object' || value === null) return false
+  const entry = value as Record<string, unknown>
+
+  return (
+    typeof entry['id'] === 'string' &&
+    typeof entry['path'] === 'string' &&
+    typeof entry['body'] === 'string' &&
+    typeof entry['queuedAt'] === 'number' &&
+    (entry['userId'] === undefined || typeof entry['userId'] === 'string')
+  )
 }
 
 function writeQueue(queue: QueuedRequest[]): void {
@@ -768,6 +808,18 @@ function writeQueue(queue: QueuedRequest[]): void {
 
 export function enqueue(path: string, body: unknown): void {
   const queue = readQueue()
+
+  /*
+   * At the cap, the oldest goes.
+   *
+   * Both choices lose a meal, so it comes down to which one. The newest is the
+   * one somebody is looking at right now and expects to see; the oldest is from
+   * a stretch offline long enough that they have probably stopped counting on
+   * it. Dropping the newest would also mean the app silently ignoring the thing
+   * it just told them was saved.
+   */
+  while (queue.length >= MAX_QUEUED) queue.shift()
+
   queue.push({
     id: crypto.randomUUID(),
     path,
