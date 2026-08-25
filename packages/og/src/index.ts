@@ -98,3 +98,12 @@ export {
   type ComputeService,
   type InferenceBroker,
 } from './compute-broker.ts'
+
+export {
+  InvalidPhraseError,
+  createSelfCustodyKey,
+  fromPhrase,
+  normalisePhrase,
+  phraseMatchesAddress,
+  type SelfCustodyKey,
+} from './custody.ts'
