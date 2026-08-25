@@ -391,6 +391,34 @@ hides. Records written *before* taking custody stay under the key we held; this
 applies going forward. And there is no reset: lose the words and those records
 stay closed.
 
+### Migrations, against a database that already has somebody in it
+
+    npm test -w @ogt/api    # tests/migrations.test.ts
+
+The harness applies migrations to an empty database, which is the one case that
+is never the case in production. `ADD COLUMN ... NOT NULL` without a default
+succeeds on zero rows and fails on one, so it passes review, passes the suite,
+and fails on the deploy.
+
+A person is now seeded after the first migration, and the remaining eight are
+applied one at a time — checking after each that they are still there, their
+meal is intact, and what they said in chat is unchanged. The list comes from the
+directory rather than from a list in the test, so a migration added tomorrow is
+covered without anybody remembering.
+
+Three static rules alongside it: no `DROP TABLE`, no `DROP COLUMN`, no `RENAME`,
+and no `NOT NULL` without a default. Blunt on purpose — dropping a column is how
+a health record loses a year, and renaming one takes the app down between the
+migration and the code expecting the new name. If a migration ever genuinely
+needs to, this test should be the argument rather than the discovery.
+
+Checked by planting four bad migrations. All four are caught, and one of them
+only by the data check: a bare `DELETE FROM meals` passes every static rule and
+is caught solely because the seeded meal stops being there.
+
+Today's nine are safe — the three `ADD COLUMN ... NOT NULL` all carry defaults,
+and nothing drops or renames. This is not for today's nine.
+
 ### The anchor is now read back, not just written
 
     npm test -w @ogt/api    # tests/anchor-check.test.ts
@@ -1047,7 +1075,7 @@ Nothing here rests on being believed.
 
 ```bash
 npm install
-npm test --workspaces                      # 520 tests: 53 core, 91 og, 245 api, 131 web
+npm test --workspaces                      # 523 tests: 53 core, 91 og, 248 api, 131 web
 npm run typecheck --workspaces             # four packages, strict
 npm audit --omit=dev                       # 0 production vulnerabilities
 cd packages/contracts && forge test        # 116 tests
