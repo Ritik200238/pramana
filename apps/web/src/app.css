@@ -1459,3 +1459,42 @@ body {
   font-size: 1.05rem;
   line-height: 1.5;
 }
+
+/* Taking custody — see components/Custody.tsx. The phrase is the only thing on
+   the screen that must be readable at arm's length while somebody copies it
+   onto paper, so it is set larger and spaced wider than anything else here. */
+.custody-address code {
+  display: block;
+  overflow-wrap: anywhere;
+  font-size: 0.8rem;
+}
+
+.phrase {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr));
+  gap: 0.5rem;
+  margin: 1rem 0;
+  padding: 0;
+  list-style: none;
+}
+
+.phrase li {
+  display: flex;
+  gap: 0.5rem;
+  align-items: baseline;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--line, rgba(0, 0, 0, 0.12));
+  border-radius: 0.4rem;
+}
+
+.phrase-index {
+  min-width: 1.25rem;
+  font-size: 0.75rem;
+  opacity: 0.55;
+  font-variant-numeric: tabular-nums;
+}
+
+.phrase-word {
+  font-size: 1.05rem;
+  letter-spacing: 0.01em;
+}

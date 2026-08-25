@@ -674,6 +674,47 @@ export const api = {
   exportWithKeyUrl() {
     return `${BASE}/users/me/export?includeRecordKey=true`
   },
+  // ---- custody ----
+
+  custody() {
+    return request<{
+      selfCustody: boolean
+      since: string | null
+      address: string | null
+      publicKey: string | null
+    }>('/users/me/custody')
+  },
+
+  /** Only the public half is ever sent. The phrase stays on the device. */
+  takeCustody(publicKey: string, address: string) {
+    return request<{ selfCustody: true; since: string; address: string }>('/users/me/custody', {
+      method: 'POST',
+      body: JSON.stringify({ publicKey, address }),
+    })
+  },
+
+  pendingAnchors() {
+    return request<{
+      contract: string | null
+      chainId: number
+      pending: Array<{
+        id: string
+        rootHashes: string[]
+        schemaVersion: number
+        createdAt: string
+        nonce: string
+        signed: boolean
+      }>
+    }>('/users/me/anchors/pending')
+  },
+
+  submitAnchorSignature(id: string, signature: string, deadline: string) {
+    return request<{ ok: true }>(`/users/me/anchors/${id}/signature`, {
+      method: 'POST',
+      body: JSON.stringify({ signature, deadline }),
+    })
+  },
+
 }
 
 // ------------------------------------------------------------ offline queue

@@ -19,6 +19,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { api, type Me, type ProofReceipt } from '../lib/api.ts'
+import { Custody } from '../components/Custody.tsx'
 
 export interface YouProps {
   onSignedOut: () => void
@@ -235,6 +236,12 @@ export function You({ onSignedOut }: YouProps) {
           Ask me less
         </button>
       </section>
+
+      {/* --------------------------------------------------------- custody */}
+      {/* Directly under the proof panel: one says where your data was
+          processed, the other says who can open it. They answer the same
+          question from two directions. */}
+      <Custody />
 
       {/* --------------------------------------------------------- weight */}
       <section className="panel">
