@@ -46,6 +46,15 @@ const TEST_ENV = {
   // it, record keys are never created and half the 0G surface stays inert in
   // tests while looking fine — which is how the real thing went unnoticed.
   OG_ANCHOR_MASTER_SEED: 'a-test-master-seed-long-enough-to-be-accepted',
+  /*
+   * The live deployment's address, for the same reason as the seed above: the
+   * self-custody handshake needs a verifying contract to check an EIP-712
+   * signature against, and without one that route answers 503 and the whole
+   * path stays untested while looking configured.
+   *
+   * Background jobs are off in the harness, so nothing here reaches a chain.
+   */
+  OG_ANCHOR_ADDRESS: '0x75016F7ce345E0527d20B5E08f273E42886D35A5',
 } as const
 
 export interface Harness {

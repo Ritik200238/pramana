@@ -23,6 +23,7 @@
 
 import { relations, sql } from 'drizzle-orm'
 import {
+  bigint,
   boolean,
   index,
   integer,
@@ -247,6 +248,21 @@ export const users = pgTable(
      * would silently move every derivation and quietly orphan the record.
      */
     anchorAddress: text('anchor_address'),
+
+    /**
+     * When this person took their records out of our custody, if they have.
+     *
+     * Non-null means `record_pub_key` and `anchor_address` are theirs, derived
+     * from a BIP-39 phrase generated on their device that we have never seen.
+     * We can still write records they can read — a public key is all encryption
+     * needs — and we can no longer read one, or sign as the owner.
+     *
+     * That last part is the part with teeth: anchoring for these users waits on
+     * a signature from their device. A worker that quietly signed with the
+     * master seed instead would produce anchors that verify, look correct, and
+     * mean the opposite of what the product told them.
+     */
+    custodyTakenAt: timestamp('custody_taken_at', { withTimezone: true }),
 
     /**
      * Intended to record a permanent safety-gate block.
@@ -565,6 +581,20 @@ export const snapshots = pgTable(
     /** Index in the on-chain anchor, once anchored. */
     anchorIndex: integer('anchor_index'),
     anchorTxHash: text('anchor_tx_hash'),
+
+    /**
+     * An EIP-712 signature produced on the owner's own device.
+     *
+     * Null for everybody we hold the key for, which is the default: the worker
+     * signs as it goes. Set only once somebody has taken custody, because then
+     * we cannot sign for them and the anchor waits until their device does.
+     *
+     * Signatures expire, so the deadline is kept beside it. A snapshot holding
+     * one that has passed is not anchorable and must be signed again rather
+     * than submitted and reverted at our expense.
+     */
+    ownerSignature: text('owner_signature'),
+    signatureDeadline: bigint('signature_deadline', { mode: 'bigint' }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [index('snapshots_user_time_idx').on(table.userId, table.createdAt)],

@@ -63,6 +63,7 @@ export {
   ANCHOR_ABI,
   AnchorClient,
   deriveOwnerAccount,
+  recoverAnchorSigner,
   deriveRecordPublicKey,
   signAnchor,
   SIGNATURE_TTL_SECONDS,

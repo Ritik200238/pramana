@@ -13,7 +13,7 @@
  */
 
 import { eq } from 'drizzle-orm'
-import { AnchorClient, deriveOwnerAccount } from '@ogt/og'
+import { AnchorClient, deriveOwnerAccount, type SignedAnchor } from '@ogt/og'
 import type { FastifyBaseLogger } from 'fastify'
 import { ethers } from 'ethers'
 import type { Database } from '../db/index.ts'
@@ -46,10 +46,43 @@ export interface AnchorWorkerOptions {
 
 export interface AnchorWorker {
   stop: () => void
-  runOnce: () => Promise<{ attempted: number; anchored: number; failed: number }>
+  runOnce: () => Promise<{ attempted: number; anchored: number; failed: number; waiting: number }>
 }
 
 const DEFAULT_MINIMUM_BALANCE = ethers.parseEther('0.01')
+
+
+/**
+ * The signature a person's device left for this snapshot, if it is still good.
+ *
+ * Returns null rather than throwing for anything missing or expired, because
+ * neither is an error: an unsigned snapshot is waiting for its owner to open
+ * the app, and an expired one needs signing again. Submitting an expired
+ * signature would revert on chain and we would pay for the revert.
+ */
+function signatureFor(snapshot: {
+  id: string
+  rootHashes: string[]
+  schemaVersion: number
+  anchorAddress: string | null
+  ownerSignature: string | null
+  signatureDeadline: bigint | null
+}): SignedAnchor | null {
+  if (!snapshot.ownerSignature || snapshot.signatureDeadline === null || !snapshot.anchorAddress) {
+    return null
+  }
+
+  if (snapshot.signatureDeadline <= BigInt(Math.floor(Date.now() / 1000))) return null
+
+  return {
+    owner: snapshot.anchorAddress,
+    rootHashes: snapshot.rootHashes,
+    schemaVersion: snapshot.schemaVersion,
+    nonce: BigInt(`0x${snapshot.id.replaceAll('-', '')}`),
+    deadline: snapshot.signatureDeadline,
+    signature: snapshot.ownerSignature,
+  }
+}
 
 export function startAnchorWorker(options: AnchorWorkerOptions): AnchorWorker {
   const intervalMs = options.intervalMs ?? 15 * 60 * 1000
@@ -58,10 +91,10 @@ export function startAnchorWorker(options: AnchorWorkerOptions): AnchorWorker {
 
   let running = false
 
-  async function runOnce(): Promise<{ attempted: number; anchored: number; failed: number }> {
+  async function runOnce(): Promise<{ attempted: number; anchored: number; failed: number; waiting: number }> {
     // Two passes at once would spend the same nonce twice and lose one of the
     // transactions to a revert.
-    if (running) return { attempted: 0, anchored: 0, failed: 0 }
+    if (running) return { attempted: 0, anchored: 0, failed: 0, waiting: 0 }
     running = true
 
     /*
@@ -76,12 +109,12 @@ export function startAnchorWorker(options: AnchorWorkerOptions): AnchorWorker {
         if (release === null) {
           // Somebody else is mid-pass. Nothing is lost by standing down: the
           // work is still queued and they are doing it.
-          return { attempted: 0, anchored: 0, failed: 0 }
+          return { attempted: 0, anchored: 0, failed: 0, waiting: 0 }
         }
       }
 
       const pending = await findPendingAnchors(options.db, batchSize)
-      if (pending.length === 0) return { attempted: 0, anchored: 0, failed: 0 }
+      if (pending.length === 0) return { attempted: 0, anchored: 0, failed: 0, waiting: 0 }
 
       const balance = await options.client.relayerBalance()
       if (balance < minimumBalance) {
@@ -95,14 +128,50 @@ export function startAnchorWorker(options: AnchorWorkerOptions): AnchorWorker {
           },
           'anchor relayer is out of funds; anchoring paused',
         )
-        return { attempted: 0, anchored: 0, failed: 0 }
+        return { attempted: 0, anchored: 0, failed: 0, waiting: 0 }
       }
 
       let anchored = 0
       let failed = 0
 
+      let waiting = 0
+
       for (const snapshot of pending) {
         try {
+          /*
+           * Somebody who took custody holds the only key that can sign as the
+           * owner of their records. We can still write those records — a public
+           * key is all encryption needs — but we cannot claim them on chain,
+           * and must not try.
+           *
+           * Signing with the master seed here would succeed. The contract would
+           * accept it, the anchor would verify, and it would record the wrong
+           * owner while the product told them otherwise. That is the failure
+           * this whole branch exists to make impossible.
+           */
+          if (snapshot.custodyTakenAt) {
+            const signed = signatureFor(snapshot)
+            if (!signed) {
+              // Not a failure. Their device signs when they next open the app,
+              // and the snapshot waits, encrypted and already on 0G Storage.
+              waiting += 1
+              continue
+            }
+
+            const result = await options.client.submit(signed)
+            await options.db
+              .update(snapshots)
+              .set({ anchorTxHash: result.txHash, anchorIndex: result.index })
+              .where(eq(snapshots.id, snapshot.id))
+
+            options.logger.info(
+              { snapshotId: snapshot.id, owner: signed.owner, txHash: result.txHash },
+              'anchored a self-custody snapshot with the owner own signature',
+            )
+            anchored += 1
+            continue
+          }
+
           const owner = deriveOwnerAccount(options.masterSeed, snapshot.userId)
 
           // The snapshot's own id is the nonce. It is unique per snapshot and
@@ -161,7 +230,17 @@ export function startAnchorWorker(options: AnchorWorkerOptions): AnchorWorker {
         }
       }
 
-      return { attempted: pending.length, anchored, failed }
+      if (waiting > 0) {
+        // Visible on purpose. Snapshots waiting on a device look identical to
+        // snapshots nothing is anchoring, and the difference matters when
+        // somebody asks why their record is not on chain yet.
+        options.logger.info(
+          { waiting },
+          'snapshots waiting for their owner device to sign; we cannot sign these',
+        )
+      }
+
+      return { attempted: pending.length, anchored, failed, waiting }
     } finally {
       if (release) {
         // Held to the end of the pass on purpose: releasing early would let a

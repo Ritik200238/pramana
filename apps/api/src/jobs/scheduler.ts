@@ -12,7 +12,7 @@
  * it should become a real queue — and the shape here does not fight that.
  */
 
-import { and, gte, isNull, sql } from 'drizzle-orm'
+import { and, eq, gte, isNull, sql } from 'drizzle-orm'
 import type { OGStorage } from '@ogt/og'
 import type { FastifyBaseLogger } from 'fastify'
 import type { Database } from '../db/index.ts'
@@ -192,7 +192,17 @@ export async function findUsersDueForSnapshot(
     .limit(limit)
 }
 
-/** Snapshots written but not yet anchored on chain. Read by the anchor worker. */
+/**
+ * Snapshots written but not yet anchored on chain. Read by the anchor worker.
+ *
+ * Carries each snapshot's custody state, because the two cases are anchored
+ * differently and confusing them is the one mistake here that would be worse
+ * than not anchoring at all. For a user we hold the key for, the worker signs.
+ * For a user who took custody, the worker must not — it waits for the
+ * signature their device left, and signing with the master seed instead would
+ * produce an anchor that verifies, looks correct, and means the opposite of
+ * what the product promised them.
+ */
 export async function findPendingAnchors(db: Database, limit = 25) {
   return db
     .select({
@@ -200,8 +210,13 @@ export async function findPendingAnchors(db: Database, limit = 25) {
       userId: snapshots.userId,
       rootHashes: snapshots.rootHashes,
       schemaVersion: snapshots.schemaVersion,
+      custodyTakenAt: users.custodyTakenAt,
+      anchorAddress: users.anchorAddress,
+      ownerSignature: snapshots.ownerSignature,
+      signatureDeadline: snapshots.signatureDeadline,
     })
     .from(snapshots)
+    .innerJoin(users, eq(users.id, snapshots.userId))
     .where(and(isNull(snapshots.anchorTxHash), gte(snapshots.createdAt, new Date(0))))
     .orderBy(snapshots.createdAt)
     .limit(limit)

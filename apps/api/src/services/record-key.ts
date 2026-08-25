@@ -46,10 +46,25 @@ export async function ensureRecordKey(
   userId: string,
 ): Promise<string> {
   const [existing] = await db
-    .select({ recordPubKey: users.recordPubKey, anchorAddress: users.anchorAddress })
+    .select({
+      recordPubKey: users.recordPubKey,
+      anchorAddress: users.anchorAddress,
+      custodyTakenAt: users.custodyTakenAt,
+    })
     .from(users)
     .where(eq(users.id, userId))
     .limit(1)
+
+  /*
+   * Somebody who has taken custody has a key we never derived and cannot
+   * derive. Their stored address deliberately disagrees with the seed, so the
+   * drift check below would fire on every snapshot and stop their records
+   * being written at all — the drift check is for a seed that moved under us,
+   * and this is the one case where disagreement is the intended state.
+   */
+  if (existing?.custodyTakenAt && existing.recordPubKey) {
+    return existing.recordPubKey
+  }
 
   const anchorAddress = deriveOwnerAccount(masterSeed, userId).address
 

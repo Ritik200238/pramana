@@ -29,6 +29,7 @@ import { registerMealRoutes } from './routes/meals.ts'
 import { registerChatRoutes } from './routes/chat.ts'
 import { registerUserRoutes } from './routes/users.ts'
 import { registerExportRoutes } from './routes/export.ts'
+import { registerCustodyRoutes } from './routes/custody.ts'
 import { registerDayRoutes } from './routes/day.ts'
 import { registerCoachRoutes } from './routes/coach.ts'
 import { startScheduler } from './jobs/scheduler.ts'
@@ -194,6 +195,11 @@ export async function buildServer(overrides: ServerOverrides = {}) {
   await registerDayRoutes(app, { db })
   await registerCoachRoutes(app, { db, openai })
   await registerExportRoutes(app, { db, masterSeed: config.OG_ANCHOR_MASTER_SEED })
+  await registerCustodyRoutes(app, {
+    db,
+    anchorAddress: config.OG_ANCHOR_ADDRESS,
+    chainId: NETWORKS[config.OG_NETWORK].chainId,
+  })
 
   app.setErrorHandler((error, request, reply) => {
     /*

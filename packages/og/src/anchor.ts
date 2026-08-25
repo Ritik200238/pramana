@@ -95,6 +95,41 @@ export interface AnchorRequest {
   nonce: bigint
 }
 
+/**
+ * Recover the address that signed an anchor.
+ *
+ * Lives here, beside `signAnchor`, on purpose. The server verifies signatures
+ * produced by a person's own device, and the moment verification keeps its own
+ * copy of the domain and the type definition, the two drift — which is the
+ * defect that has accounted for most of the bugs in this repository, and here
+ * it would reject every honest signature while looking like a forgery.
+ *
+ * The type is `AnchorSnapshot`, not `Anchor`; writing it out by hand somewhere
+ * else got that wrong immediately.
+ */
+export function recoverAnchorSigner(
+  contractAddress: string,
+  chainId: number,
+  signed: Omit<SignedAnchor, 'owner'>,
+): string {
+  return ethers.verifyTypedData(
+    {
+      name: 'HealthRecordAnchor',
+      version: '1',
+      chainId,
+      verifyingContract: contractAddress,
+    },
+    EIP712_TYPES as unknown as Record<string, ethers.TypedDataField[]>,
+    {
+      rootHashesHash: ethers.keccak256(ethers.concat(signed.rootHashes as string[])),
+      schemaVersion: signed.schemaVersion,
+      nonce: signed.nonce,
+      deadline: signed.deadline,
+    },
+    signed.signature,
+  )
+}
+
 export interface SignedAnchor extends AnchorRequest {
   owner: string
   deadline: bigint

@@ -1,0 +1,1 @@
+ALTER TABLE "users" ADD COLUMN "custody_taken_at" timestamp with time zone;
