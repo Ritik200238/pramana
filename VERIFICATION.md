@@ -269,10 +269,25 @@ in that path.
 This does not prove a live indexer returns the bytes unchanged. It proves that
 when they come back, they decrypt.
 
-### 0G Storage round trip
+### 0G Storage round trip — CLOSED
 
-**Status: not run against live storage — and, until this session, unreachable
-for a second reason.**
+A record has been written to 0G Storage and read back byte for byte.
+
+| | |
+|---|---|
+| Root hash | `0x9455adff79014c184b4a70767cb00bc80a0e003c422b716ec0db42fb6fba4c24` |
+| Transaction | `0x9a479d8d1089223eea06d5f1354c75bccde73718a77a30f2e45e66d0ff3c6f06` |
+| Payload | 266 bytes, ECIES encrypted, testnet turbo indexer |
+
+`npm run test:storage -w @ogt/og`. Three checks: the signer has funds, a record
+survives the round trip identically including its Devanagari food names, and a
+different key cannot decrypt it — the per-user isolation claim against a live
+indexer rather than a fixture.
+
+The text below is the record of what this looked like before.
+
+**Status when written: not run against live storage — and, until this session,
+unreachable for a second reason.**
 
 This gap was reported for weeks as waiting on a funded key. That was not the
 whole story. `users.record_pub_key` was never written by anything, and the
@@ -551,6 +566,7 @@ npm test --workspaces                      # 362 tests, no network required
 npm run test:live -w @ogt/og               # 6 live checks; 4 more with a key
 cd packages/contracts && forge test        # 108 tests
 bash script/verify-fork.sh                 # deploy + exercise on forked Galileo
+npm run test:storage -w @ogt/og            # a real record through 0G Storage
 npm run test:fork -w @ogt/og               # anchoring and coach ownership on a fork
 npm run preflight -w @ogt/api              # check a deployment against live systems
 ```
