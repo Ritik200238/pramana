@@ -391,6 +391,51 @@ hides. Records written *before* taking custody stay under the key we held; this
 applies going forward. And there is no reset: lose the words and those records
 stay closed.
 
+### A model that ran out of room mid-answer
+
+    npm test -w @ogt/og     # tests/truncation.test.ts
+    npm test -w @ogt/api    # tests/prompt-injection.test.ts
+
+`finish_reason: 'length'` was read nowhere, so a truncated completion came back
+as an ordinary success. Two different harms, needing two different answers.
+
+For the coach — prose at five hundred tokens — a long reply was cut mid-word,
+shown as though it were finished, and stored as an assistant turn that gets
+replayed as context later. **A coach that appears to trail off is worse than one
+that says it ran long, because the person cannot tell which happened.** It now
+says so.
+
+For anything asking strict JSON, half an object is not a smaller answer. It
+reached `JSON.parse` far from the cause and failed with a message about the
+shape of the response rather than its length. Truncated JSON now advances the
+chain instead — the next model has its own tokenizer and may fit the same
+content — and a chain that only ever truncates raises rather than returning
+fragments.
+
+**Chasing that surfaced something worse.** Extraction and the coach reply ran
+under `Promise.all`, so a failed extraction rejected the whole request: somebody
+who had just typed something difficult got an error instead of an answer. They
+are not equally important. The reply is the point and extraction is bookkeeping,
+and pretending otherwise let the less important one take the other down.
+
+R6 is unaffected either way — their words are written to `chat_messages` before
+any model is called, so nothing said is lost when extraction fails. Only the
+derived facts are, and the next message picks those up.
+
+| Property | Proved by |
+|---|---|
+| A complete answer is not marked truncated | Test |
+| Prose that was cut off is returned, and says so | Test |
+| Truncated strict JSON advances the chain | Test |
+| A chain that only truncates raises, never returns fragments | Test |
+| A clipped coach reply tells the person | End-to-end test |
+| A complete reply stays quiet | End-to-end test |
+| A failed extraction does not cost the reply | End-to-end test |
+| The cost ledger records only calls that happened | Test — no phantom row |
+
+Three mutations, all caught in both packages: not reading `finish_reason`,
+handing truncated JSON on, and restoring `Promise.all`.
+
 ### Accessibility, checked by axe rather than by eye
 
     npm test -w @ogt/web    # tests/accessibility.test.tsx
@@ -1256,7 +1301,7 @@ Nothing here rests on being believed.
 
 ```bash
 npm install
-npm test --workspaces                      # 554 tests: 53 core, 91 og, 258 api, 152 web
+npm test --workspaces                      # 560 tests: 53 core, 95 og, 260 api, 152 web
 npm run typecheck --workspaces             # four packages, strict
 npm audit --omit=dev                       # 0 production vulnerabilities
 cd packages/contracts && forge test        # 116 tests

@@ -230,3 +230,90 @@ test('an assistant turn we actually wrote is replayed untouched', async () => {
     await harness.close()
   }
 })
+
+test('a coach reply cut off mid-sentence says so', async () => {
+  /*
+   * The model stops at its token limit and the fragment used to be presented —
+   * and stored — as a finished answer, so it came back later as context too. A
+   * coach that appears to trail off is worse than one that says it ran long,
+   * because the person cannot tell which happened.
+   */
+  const harness = await startHarness()
+
+  try {
+    const { token } = await person(harness)
+
+    const ask = () =>
+      harness.app.inject({
+        method: 'POST',
+        url: '/chat',
+        headers: { authorization: `Bearer ${token}` },
+        payload: { message: 'tell me everything about protein' },
+      })
+
+    // The common case, which must stay quiet: nothing to say about an answer
+    // that finished.
+    const complete = await ask()
+    assert.equal(complete.statusCode, 200, complete.body)
+    assert.equal((complete.json() as { notice?: string }).notice, undefined)
+
+    harness.truncateModel(true)
+
+    const cut = await ask()
+    assert.equal(cut.statusCode, 200, cut.body)
+    assert.match(
+      (cut.json() as { notice?: string }).notice ?? '',
+      /ran longer than I had room for/i,
+      'a clipped answer must say it was clipped',
+    )
+  } finally {
+    await harness.close()
+  }
+})
+
+test('a failed extraction does not cost somebody their reply', async () => {
+  /*
+   * These two calls used to run under `Promise.all`, so a failed extraction
+   * rejected the whole request and somebody who had just typed something
+   * difficult got an error instead of an answer. They are not equally
+   * important: the reply is the point and extraction is bookkeeping.
+   *
+   * Truncation is the realistic way to produce it — strict JSON cut at the
+   * token limit is not JSON — and it is what surfaced this in the first place.
+   */
+  const harness = await startHarness()
+
+  try {
+    const { token } = await person(harness)
+    harness.truncateModel(true)
+
+    const response = await harness.app.inject({
+      method: 'POST',
+      url: '/chat',
+      headers: { authorization: `Bearer ${token}` },
+      payload: { message: 'my knee is worse and I slept badly' },
+    })
+
+    assert.equal(response.statusCode, 200, response.body)
+
+    const body = response.json() as { reply: string; understood: unknown[] }
+    assert.ok(body.reply.length > 0, 'the reply must still arrive')
+
+    // Nothing was understood, which is true and is not a reason to withhold it.
+    assert.deepEqual(body.understood, [])
+
+    // R6 holds regardless: their own words were stored before any of this ran.
+    const said = await harness.db.select().from(schema.chatMessages)
+    assert.ok(
+      said.some((row) => row.content.includes('my knee is worse')),
+      'what they said is kept even when extraction fails',
+    )
+
+    // And the cost ledger records only the call that happened, rather than a
+    // phantom row for one that did not.
+    const usage = await harness.db.select().from(schema.inferenceUsage)
+    assert.deepEqual(usage.map((row) => row.task), ['coach'])
+  } finally {
+    await harness.close()
+  }
+})

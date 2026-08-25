@@ -132,6 +132,20 @@ export interface CompleteOptions {
 export interface CompleteResult {
   text: string
   model: string
+  /**
+   * The model ran out of room and stopped mid-answer.
+   *
+   * `finish_reason: 'length'` was not read anywhere before, so a truncated
+   * completion came back as an ordinary success. For the coach that means a
+   * sentence cut mid-word shown to a person and stored as something the
+   * assistant said; for anything expecting JSON it means a parse error thrown
+   * far from its cause, blaming the shape of the answer rather than its length.
+   *
+   * Surfaced rather than handled here, because the right response differs: a
+   * truncated meal breakdown is a failure, and a truncated sentence is a
+   * judgement call for whoever is showing it.
+   */
+  truncated: boolean
   /** How many models in the chain failed before this one answered. */
   failovers: number
   usage: Usage
@@ -191,8 +205,24 @@ export async function complete(
         continue
       }
 
-      const text = response.choices[0]?.message?.content
+      const choice = response.choices[0]
+      const text = choice?.message?.content
       if (!text) throw new Error('empty completion')
+
+      const truncated = choice?.finish_reason === 'length'
+
+      /*
+       * A truncated answer where strict JSON was asked for is not an answer.
+       *
+       * Failing here rather than downstream keeps the reason attached to the
+       * cause: the next model in the chain has its own tokenizer and may well
+       * fit the same content, so this is worth one more attempt rather than
+       * being handed on as a parse error nobody can act on.
+       */
+      if (truncated && opts.jsonSchema) {
+        attempts.push({ model: model.id, error: 'truncated_before_valid_json' })
+        continue
+      }
 
       const promptTokens = response.usage?.prompt_tokens ?? 0
       const completionTokens = response.usage?.completion_tokens ?? 0
@@ -200,6 +230,7 @@ export async function complete(
       return {
         text,
         model: model.id,
+        truncated,
         failovers: index,
         usage: {
           promptTokens,

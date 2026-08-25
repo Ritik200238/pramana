@@ -62,8 +62,29 @@ export async function registerChatRoutes(app: FastifyInstance, deps: ChatRouteDe
     // making the person wait for bookkeeping.
     const context = await loadCoachContext(deps.db, userId)
 
-    const [extraction, coachReply] = await Promise.all([
-      extractFacts({ client: deps.openai, message: body.message }),
+    /*
+     * The reply is the point. Extraction is bookkeeping.
+     *
+     * These used to run under `Promise.all`, so a failed extraction rejected
+     * the whole request and somebody who had just typed something difficult got
+     * an error instead of an answer. The two are not equally important, and
+     * pretending they are meant the less important one could take the other
+     * down.
+     *
+     * R6 is unaffected either way: their own words were written to
+     * `chat_messages` before any of this ran, so nothing they said is lost when
+     * extraction fails — only the structured facts we would have derived, which
+     * the next message can pick up.
+     */
+    const [extractionResult, coachReply] = await Promise.all([
+      (async () => {
+        try {
+          return await extractFacts({ client: deps.openai, message: body.message })
+        } catch (error) {
+          request.log.warn({ err: error }, 'fact extraction failed; the reply still goes out')
+          return null
+        }
+      })(),
       complete(deps.openai, {
         task: 'coach',
         messages: [
@@ -89,7 +110,9 @@ export async function registerChatRoutes(app: FastifyInstance, deps: ChatRouteDe
     ])
 
     const now = new Date()
-    if (extraction.extraction.facts.length > 0) {
+    const extraction = extractionResult
+
+    if (extraction && extraction.extraction.facts.length > 0) {
       await deps.db.insert(lifeFacts).values(
         extraction.extraction.facts.map((fact) => ({
           userId: userId,
@@ -110,28 +133,40 @@ export async function registerChatRoutes(app: FastifyInstance, deps: ChatRouteDe
       model: coachReply.model,
     })
 
+    /*
+     * One row per call that actually happened.
+     *
+     * An extraction that failed gets no row rather than a row with zeroes and a
+     * model named "unavailable": this table is the cost ledger and the
+     * attestation record, and a phantom entry would misstate both. The warning
+     * above is where a failed extraction is visible.
+     */
     await deps.db.insert(inferenceUsage).values([
+      ...(extraction
+        ? [
+            {
+              userId: userId,
+              task: 'extraction' as const,
+              model: extraction.model,
+              promptTokens: extraction.usage.promptTokens,
+              completionTokens: extraction.usage.completionTokens,
+              usd: extraction.usage.usdEstimate.toFixed(8),
+              costNeuron: extraction.usage.costNeuron?.toString() ?? null,
+              failovers: extraction.failovers,
+              attestation: extraction.attestation.status,
+              attestationProvider: extraction.attestation.provider,
+              attestationRequestId: extraction.attestation.requestId,
+            },
+          ]
+        : []),
       {
         userId: userId,
-        task: 'extraction',
-        model: extraction.model,
-        promptTokens: extraction.usage.promptTokens,
-        completionTokens: extraction.usage.completionTokens,
-        usd: extraction.usage.usdEstimate.toFixed(8),
-      costNeuron: extraction.usage.costNeuron?.toString() ?? null,
-        failovers: extraction.failovers,
-        attestation: extraction.attestation.status,
-        attestationProvider: extraction.attestation.provider,
-        attestationRequestId: extraction.attestation.requestId,
-      },
-      {
-        userId: userId,
-        task: 'coach',
+        task: 'coach' as const,
         model: coachReply.model,
         promptTokens: coachReply.usage.promptTokens,
         completionTokens: coachReply.usage.completionTokens,
         usd: coachReply.usage.usdEstimate.toFixed(8),
-      costNeuron: coachReply.usage.costNeuron?.toString() ?? null,
+        costNeuron: coachReply.usage.costNeuron?.toString() ?? null,
         failovers: coachReply.failovers,
         attestation: coachReply.attestation.status,
         attestationProvider: coachReply.attestation.provider,
@@ -143,16 +178,33 @@ export async function registerChatRoutes(app: FastifyInstance, deps: ChatRouteDe
       reply: coachReply.text,
       // Surfaced so the client can show what was understood, tappable to
       // correct. Shown quietly — never as a confirmation dialog.
-      understood: extraction.extraction.facts.map((fact) => ({
+      // Empty when extraction failed, which reads to the client exactly as
+      // "nothing was understood from this message" — true, and not a reason to
+      // withhold the reply.
+      understood: (extraction?.extraction.facts ?? []).map((fact) => ({
         kind: fact.kind,
         verbatim: fact.verbatim,
         value: fact.value,
         unit: fact.unit,
       })),
-      mentionsFood: extraction.extraction.mentionsFood,
+      mentionsFood: extraction?.extraction.mentionsFood ?? false,
+      /*
+       * Said out loud when the reply was cut short.
+       *
+       * The model stops at its token limit mid-sentence, and without this the
+       * fragment is presented as a finished answer — and stored as one, so it
+       * comes back as context later. A coach that appears to trail off is worse
+       * than one that says it ran long, because the person cannot tell which
+       * happened.
+       *
+       * The safety notice wins if both apply: being told to talk to somebody
+       * matters more than being told the sentence was clipped.
+       */
       ...(gate.verdict.level === 'caution' && gate.verdict.message
         ? { notice: gate.verdict.message }
-        : {}),
+        : coachReply.truncated
+          ? { notice: 'That answer ran longer than I had room for — ask again for the rest.' }
+          : {}),
     })
   })
 

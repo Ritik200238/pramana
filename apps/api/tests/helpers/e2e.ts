@@ -66,6 +66,14 @@ export interface Harness {
   sentCodes: Array<{ to: string; code: string }>
   /** Set to make the next send fail, as an outage would. */
   failNextSend: (fail: boolean) => void
+  /**
+   * Make model answers come back cut off at the token limit.
+   *
+   * Real and easy to hit: the coach runs at 500 tokens and a long question
+   * reaches it. Without a way to produce it here, the handling could only be
+   * tested one side of the branch.
+   */
+  truncateModel: (truncate: boolean) => void
   adminToken: string
   close: () => Promise<void>
 }
@@ -137,7 +145,7 @@ function satisfying(schema: unknown): unknown {
   }
 }
 
-function fakeModel(record: Harness['modelCalls']) {
+function fakeModel(record: Harness['modelCalls'], state: { truncate: boolean }) {
   return {
     chat: {
       completions: {
@@ -158,7 +166,7 @@ function fakeModel(record: Harness['modelCalls']) {
               {
                 index: 0,
                 message: { role: 'assistant', content },
-                finish_reason: 'stop',
+                finish_reason: state.truncate ? 'length' : 'stop',
               },
             ],
             usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
@@ -180,6 +188,7 @@ export async function startHarness(): Promise<Harness> {
   const db = drizzle(client, { schema }) as unknown as Database
 
   const modelCalls: Harness['modelCalls'] = []
+  const modelState = { truncate: false }
   const sentCodes: Harness['sentCodes'] = []
   let failSend = false
 
@@ -199,7 +208,7 @@ export async function startHarness(): Promise<Harness> {
 
   const { app } = await buildServer({
     db,
-    openai: fakeModel(modelCalls) as never,
+    openai: fakeModel(modelCalls, modelState) as never,
     storage: { signerAddress: '0x' + '22'.repeat(20) } as never,
     sender,
     backgroundJobs: false,
@@ -215,6 +224,9 @@ export async function startHarness(): Promise<Harness> {
     sentCodes,
     failNextSend: (fail: boolean) => {
       failSend = fail
+    },
+    truncateModel: (truncate: boolean) => {
+      modelState.truncate = truncate
     },
     adminToken: TEST_ENV.ADMIN_TOKEN,
     close: async () => {
