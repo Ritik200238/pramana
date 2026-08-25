@@ -97,6 +97,15 @@ deployment rather than merely deployed:
 `snapshotCount` reads back 1 and `ownerOf(1)` returns the owner, both from the
 live chain. Deployment cost about 0.0193 0G in total.
 
+**The product's own path is proved live too**, which matters because the checks
+above used `cast` and called the contracts directly as the sender. The
+application does not do that: it derives an account for the user, signs EIP-712,
+and has a relayer submit and pay. `npm run test:relayed -w @ogt/og` runs that on
+Galileo — a user who has never held a coin gets a record anchored (146,840 gas)
+and a coach minted (200,539 gas), both owned by their derived account, paid for
+by a relayer that gains no claim on either, with a replayed nonce refused by the
+live contract.
+
 The fork estimates held: 116,899 predicted against 117,025 actual, and 168,230
 against 168,303. That is worth recording as evidence the fork testing was
 telling the truth, not only as a gas figure.
@@ -432,9 +441,28 @@ the user's browser changes who calls `signAnchor` and nothing else — no contra
 change, no migration of existing records. What it costs is a recovery story for
 a lost device, which is a product decision rather than an engineering one.
 
-**This needs a decision before launch**, because the marketing copy depends on
-it. Ship custodial and describe it accurately, or hold the ownership claim until
-keys are user-held.
+**Recommendation: ship custodial, described exactly as it is.**
+
+Not because it is the stronger property — it is not — but because the
+alternative costs more than it buys today. User-held keys need a recovery story
+for a lost or wiped phone, and the only honest ones are a seed phrase or a
+second factor. Both undo the thing that makes this product reachable at all:
+sign-in is a phone number and nothing else, for people who have never used a
+wallet. Trading that for a guarantee against us specifically, before there is a
+single user, is the wrong order.
+
+What makes it defensible is that nothing about it is hidden. The proof screen
+says we hold the key, the schema says so, this file says so, and anybody can
+take their key and read their own records without us. Four tests fail if that
+disclosure is weakened.
+
+The decision is reversible at low cost by design: the relayed path means moving
+the key onto the user's device changes who calls `signAnchor` and nothing else.
+No contract change, no migration.
+
+**This is a recommendation, not a fait accompli.** If the ownership claim needs
+to be absolute for the buildathon's judging, say so and the copy holds back
+until keys are user-held.
 
 **What no longer waits on that decision.** A person can now ask for their record
 key and take it (`?includeRecordKey=true`, offered as a separate action in the
