@@ -57,7 +57,9 @@ Median questions per logged meal must fall **below 0.3 by week four**. If it sta
 
 **We deliberately do not use** the proxied `claude-*` / `gpt-*` models on the Router. They report `tee_attested: null` — billing convenience, not confidential execution. Identified health data must never reach them while we make the privacy claim, and a test enforces it.
 
-**Crypto is invisible to the user.** The backend holds the key and funds the Router balance. No wallet, no gas, no seed phrase — ever.
+**Crypto is invisible by default.** The backend holds the key and pays for inference, storage and gas. Someone can sign up with a phone number and never learn any of this is here — no wallet, no gas, no seed phrase.
+
+**And it is theirs the moment they want it.** Self-custody is one screen: the device generates a BIP-39 phrase, derives the key, and sends us the public half. After that we can still write their records and can no longer read them or sign as them — anchoring becomes a handshake where their device signs and we still pay the gas. It is one-way on purpose. A product that can take custody back has not given anything away.
 
 ---
 
@@ -111,17 +113,18 @@ apps/api             Fastify backend — pipelines, services, routes, snapshot j
 apps/web             The PWA
 ```
 
-Read `CLAUDE.md` for the rules this was built under, `PRD.md` for what is proven versus assumed, `FEATURES.md` for the 32 ranked features, and `BUILDATHON.md` for the judging criteria.
+Read `VERIFICATION.md` first if the question is whether any of this is real: every claim in this file, the command that proves it, and the ones still marked NOT VERIFIED. Then `CLAUDE.md` for the rules this was built under, `PRD.md` for what is proven versus assumed, `FEATURES.md` for the 32 ranked features, and `BUILDATHON.md` for the judging criteria.
 
 ## Current state
 
 | | |
 |---|---|
-| Tests | **113 passing** — 45 core · 13 og · 25 api · 30 contracts |
+| Tests | **703 passing** — 53 core · 98 og · 279 api · 157 web · 116 contracts |
 | Contract coverage | **100%** lines, statements, branches, functions |
-| Typecheck | Clean across all four packages |
+| Typecheck | Clean across every package |
 | Production audit | **0 vulnerabilities** (see `SECURITY.md`) |
-| PWA bundle | 66 KB gzipped, service worker, offline queue |
+| PWA first load | **75 KB** gzipped. `ethers` (141 KB) loads only if you take custody |
+| Evidence | `VERIFICATION.md` — every claim above, with the command that proves it |
 
 ---
 
@@ -140,14 +143,30 @@ npm install
 cp apps/api/.env.example apps/api/.env
 ```
 
-You need a **0G Router inference key**: go to [pc.0g.ai](https://pc.0g.ai), connect a wallet, deposit 0G tokens, then Dashboard → API Keys → create a key with `inference` permission. It starts with `sk-`.
+There are two ways to pay for inference, and the app runs on either.
+
+**Router** (default) — a hosted key. Go to [pc.0g.ai](https://pc.0g.ai), connect a wallet, deposit 0G, then Dashboard → API Keys → create a key with `inference` permission. It starts with `sk-`.
 
 ```
 DATABASE_URL=postgres://localhost:5432/ogt
+OG_INFERENCE_MODE=router
 OG_ROUTER_API_KEY=sk-...
 OG_STORAGE_PRIVATE_KEY=0x...     # backend key that pays for storage writes
 OG_NETWORK=testnet
 ```
+
+**Broker** — no API key at all. The wallet pays each provider directly through
+`@0glabs/0g-serving-broker`, settled on chain. Set the mode and drop the key:
+
+```
+OG_INFERENCE_MODE=broker
+```
+
+The marketplace requires a **1 0G minimum** in the ledger before a provider will
+answer, and funding it is `transferFund` *after* `addLedger` — skipping that
+step returns a "requires 1 0G" error that reads like an empty balance when the
+balance is fine. `npm run test:compute -w @ogt/api` runs a live call on this
+path and prints what it cost.
 
 ### Run
 
@@ -169,10 +188,15 @@ forge script script/Deploy.s.sol:Deploy --rpc-url og_testnet --broadcast
 ### Verify everything
 
 ```bash
-npm test --workspaces
+npm test --workspaces      # 587 tests
 npm run typecheck --workspaces
 npm audit --omit=dev
+npm run evidence           # checks every 0G claim against 0G itself, live
 ```
+
+`npm run evidence` needs no key, no funds and no configuration — it reads public
+0G infrastructure and prints a pass or fail per claim, so anybody can run it
+without being trusted with anything.
 
 ## Network reference
 

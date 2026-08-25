@@ -171,3 +171,92 @@ test('the Foundry count in the ledger matches the contracts', () => {
     `the ledger claims ${claimed} Foundry tests; ${counted} are declared`,
   )
 })
+
+/*
+ * The README gets the same treatment as the ledger, and for a better reason: it
+ * is the first thing anybody reads and the last thing anybody updates.
+ *
+ * It claimed 113 tests when there were 703, and did not mention the web app at
+ * all — a number written down once, six times out of date, sitting under a
+ * heading that said "Current state". The ledger had a test for exactly this and
+ * the README did not, which is the whole reason it drifted.
+ */
+
+function readme(): string {
+  return readFileSync(join(ROOT, 'README.md'), 'utf8')
+}
+
+test('the README test counts match the suites that produce them', () => {
+  const dirs: Record<string, string> = {
+    core: join(ROOT, 'packages', 'core', 'tests'),
+    og: join(ROOT, 'packages', 'og', 'tests'),
+    api: join(ROOT, 'apps', 'api', 'tests'),
+    web: join(ROOT, 'apps', 'web', 'tests'),
+  }
+
+  const actual: Record<string, number> = {}
+  for (const [name, dir] of Object.entries(dirs)) {
+    let n = 0
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (!entry.isFile() || !/\.tsx?$/.test(entry.name)) continue
+      n += (readFileSync(join(dir, entry.name), 'utf8').match(/^\s*(?:test|it)\(/gm) ?? []).length
+    }
+    actual[name] = n
+  }
+
+  let contracts = 0
+  const solDir = join(ROOT, 'packages', 'contracts', 'test')
+  for (const entry of readdirSync(solDir, { withFileTypes: true })) {
+    if (!entry.isFile() || !entry.name.endsWith('.t.sol')) continue
+    contracts += (readFileSync(join(solDir, entry.name), 'utf8').match(/^\s*function test/gm) ?? []).length
+  }
+  actual.contracts = contracts
+
+  const row = /\| Tests \| \*\*(\d+) passing\*\* — (.+?) \|/.exec(readme())
+  assert.ok(row, 'the README must state how many tests there are')
+
+  // Each suite named in the row, checked against the files. A floor, like the
+  // ledger: claiming fewer than exist is stale, claiming more is dishonest.
+  const wrong: string[] = []
+  for (const [, count, name] of row[2]!.matchAll(/(\d+)\s+([a-z]+)/g)) {
+    const have = actual[name!]
+    if (have === undefined) wrong.push(`${name} — no such suite`)
+    else if (Number(count) > have) wrong.push(`${name}: claims ${count}, ${have} exist`)
+  }
+  assert.deepEqual(wrong, [], 'the README claims tests that do not exist')
+
+  const total = Object.values(actual).reduce((a, b) => a + b, 0)
+  assert.ok(
+    Number(row[1]) <= total,
+    `the README claims ${row[1]} tests; ${total} are declared`,
+  )
+})
+
+test('the README does not promise the absence of a feature that exists', () => {
+  /*
+   * "No wallet, no gas, no seed phrase — ever" was true the day it was written
+   * and false the day self-custody shipped, which is a BIP-39 phrase generated
+   * on the device. Nothing failed: a sentence in a document cannot.
+   *
+   * The check is narrow on purpose — an absolute claim about a capability, held
+   * against whether that capability is in the tree.
+   */
+  const text = readme()
+
+  const custody = join(ROOT, 'apps', 'web', 'src', 'lib', 'custody.ts')
+  let hasCustody = true
+  try {
+    readFileSync(custody, 'utf8')
+  } catch {
+    hasCustody = false
+  }
+
+  if (!hasCustody) return
+
+  for (const forbidden of ['seed phrase — ever', 'no seed phrase, ever', 'never a seed phrase']) {
+    assert.ok(
+      !text.toLowerCase().includes(forbidden.toLowerCase()),
+      `the README rules out a seed phrase while custody.ts generates one: "${forbidden}"`,
+    )
+  }
+})
