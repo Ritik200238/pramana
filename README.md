@@ -119,7 +119,7 @@ Read `VERIFICATION.md` first if the question is whether any of this is real: eve
 
 | | |
 |---|---|
-| Tests | **703 passing** — 53 core · 98 og · 279 api · 157 web · 116 contracts |
+| Tests | **714 passing** — 53 core · 98 og · 282 api · 165 web · 116 contracts |
 | Contract coverage | **100%** lines, statements, branches, functions |
 | Typecheck | Clean across every package |
 | Production audit | **0 vulnerabilities** (see `SECURITY.md`) |
@@ -188,7 +188,7 @@ forge script script/Deploy.s.sol:Deploy --rpc-url og_testnet --broadcast
 ### Verify everything
 
 ```bash
-npm test --workspaces      # 587 tests
+npm test --workspaces      # 598 tests
 npm run typecheck --workspaces
 npm audit --omit=dev
 npm run evidence           # checks every 0G claim against 0G itself, live

@@ -1470,7 +1470,7 @@ Nothing here rests on being believed.
 
 ```bash
 npm install
-npm test --workspaces                      # 587 tests: 53 core, 98 og, 279 api, 157 web
+npm test --workspaces                      # 598 tests: 53 core, 98 og, 282 api, 165 web
 npm run typecheck --workspaces             # four packages, strict
 npm audit --omit=dev                       # 0 production vulnerabilities
 cd packages/contracts && forge test        # 116 tests
