@@ -851,7 +851,7 @@ Nothing here rests on being believed.
 
 ```bash
 npm install
-npm test --workspaces                      # 444 tests: 45 core, 91 og, 227 api, 81 web
+npm test --workspaces                      # 451 tests: 45 core, 91 og, 227 api, 88 web
 npm run typecheck --workspaces             # four packages, strict
 npm audit --omit=dev                       # 0 production vulnerabilities
 cd packages/contracts && forge test        # 113 tests
