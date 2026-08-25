@@ -88,3 +88,13 @@ export {
   type TranscriptionOptions,
   type TranscriptionResult,
 } from './speech.ts'
+
+export {
+  chooseService,
+  createBrokerClient,
+  listChatServices,
+  readService,
+  type BrokerClientOptions,
+  type ComputeService,
+  type InferenceBroker,
+} from './compute-broker.ts'
