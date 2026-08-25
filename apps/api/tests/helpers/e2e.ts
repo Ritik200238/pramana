@@ -95,19 +95,69 @@ async function migrate(client: PGlite): Promise<void> {
 }
 
 /** A model client shaped like the one the routes use, answering canned JSON. */
+/**
+ * A minimal object satisfying a JSON schema.
+ *
+ * The fake used to answer `{}` to everything, which meant any route asking for
+ * a strict schema — the chat pipeline among them — was rejected by its own
+ * validator before the handler ran. Those routes were untestable and therefore
+ * untested, which is how the one rule about never throwing away what a person
+ * says ended up with nothing proving it.
+ *
+ * Built from the schema the caller sent rather than hand-written per route, so
+ * it cannot drift from a schema that changes.
+ */
+function satisfying(schema: unknown): unknown {
+  if (typeof schema !== 'object' || schema === null) return null
+  const node = schema as Record<string, unknown>
+
+  switch (node['type']) {
+    case 'string':
+      return Array.isArray(node['enum']) ? node['enum'][0] : ''
+    case 'number':
+    case 'integer':
+      return 0
+    case 'boolean':
+      return false
+    case 'array':
+      // Empty satisfies any array whose schema does not demand entries, and an
+      // empty list is the honest answer for "what did you extract" from a fake.
+      return []
+    case 'object': {
+      const properties = (node['properties'] ?? {}) as Record<string, unknown>
+      const required = (node['required'] ?? Object.keys(properties)) as string[]
+      const out: Record<string, unknown> = {}
+      for (const key of required) {
+        if (key in properties) out[key] = satisfying(properties[key])
+      }
+      return out
+    }
+    default:
+      return {}
+  }
+}
+
 function fakeModel(record: Harness['modelCalls']) {
   return {
     chat: {
       completions: {
-        async create(body: { model: string; messages: unknown }) {
+        async create(body: {
+          model: string
+          messages: unknown
+          response_format?: { json_schema?: { schema?: unknown } }
+        }) {
           record.push({ model: body.model, messages: body.messages })
+
+          const schema = body.response_format?.json_schema?.schema
+          const content = schema === undefined ? '{}' : JSON.stringify(satisfying(schema))
+
           return {
             id: 'chatcmpl-test',
             model: body.model,
             choices: [
               {
                 index: 0,
-                message: { role: 'assistant', content: '{}' },
+                message: { role: 'assistant', content },
                 finish_reason: 'stop',
               },
             ],
