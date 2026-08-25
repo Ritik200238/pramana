@@ -24,6 +24,8 @@
  */
 
 import OpenAI from 'openai'
+import type { AttestationReceipt } from './attestation.ts'
+import type { ModelSpec } from './models.ts'
 
 /** The subset of the broker this module needs, so it can be faked in a test. */
 export interface InferenceBroker {
@@ -183,4 +185,74 @@ export function createBrokerClient(options: BrokerClientOptions): OpenAI {
     maxRetries: 0,
     fetch: brokerFetch,
   })
+}
+
+/**
+ * The model chain for a directly-reached provider.
+ *
+ * One entry, because there is no failover to arrange: the provider was chosen
+ * from the marketplace and its sub-account is funded. Losing it means choosing
+ * again from the marketplace, which is a different operation than trying the
+ * next model in a list.
+ */
+export function serviceChain(service: ComputeService): readonly ModelSpec[] {
+  /*
+   * Pricing comes straight from the on-chain marketplace record, in neuron per
+   * token. Unlike the Router catalogue — a hand-maintained mirror that had
+   * drifted on three of six models, one by 135% — this cannot go stale: it is
+   * the number the contract will charge.
+   *
+   * Converted to USD-per-token only because ModelSpec is shaped that way for
+   * budgeting. The exact charge is still whatever settles on chain.
+   */
+  const neuronToUsd = (neuron: bigint): number => Number(neuron) / 1e18
+
+  return [
+    {
+      id: service.model,
+      // Read from the record rather than assumed. `chooseService` has already
+      // refused anything unattested, so in practice this is always true.
+      tee: service.teeVerified,
+      // qwen2.5-omni takes images as well as text, which is what a plate photo
+      // needs. Claimed only for models whose name says so, because guessing
+      // wrong here means sending a photograph to something that cannot read it.
+      vision: service.model.includes('omni') || service.model.includes('vl'),
+      usdPerPromptToken: neuronToUsd(service.inputPriceNeuron),
+      usdPerCompletionToken: neuronToUsd(service.outputPriceNeuron),
+      /*
+       * Conservative on purpose. The marketplace record does not carry a
+       * `supported_parameters` list the way the Router catalogue does, and
+       * there is no upside to sending an option a provider might reject — that
+       * lesson already cost this codebase once, when `temperature` was sent
+       * unconditionally to a model that does not advertise it.
+       */
+      supports: { temperature: false, responseFormat: false },
+    },
+  ]
+}
+
+/**
+ * Where an answer from this provider ran, and on what evidence.
+ *
+ * The Router returns `x_0g_trace` per response and we check that. A provider
+ * reached directly returns no such thing, and pretending otherwise would be the
+ * worst kind of security theatre — so provenance here comes from the place it
+ * actually lives: the marketplace record on 0G Chain, which carries the
+ * provider's attestation flag, the verifier it attests through, and the address
+ * that signed for it.
+ *
+ * That is established when the provider is chosen, not per request, and this
+ * says so rather than implying a per-response signature we never saw.
+ */
+export function serviceAttestation(service: ComputeService, requestId?: string): AttestationReceipt {
+  return {
+    requestId: requestId ?? null,
+    provider: service.provider,
+    model: service.model,
+    // `chooseService` refuses an unattested provider outright, so anything that
+    // reaches here is attested — but this reads the record rather than trusting
+    // that, because the two could drift apart and this is the honest one.
+    status: service.teeVerified ? 'verified' : 'unavailable',
+    verifiedAt: new Date().toISOString(),
+  }
 }

@@ -92,6 +92,8 @@ export {
 export {
   chooseService,
   createBrokerClient,
+  serviceAttestation,
+  serviceChain,
   listChatServices,
   readService,
   type BrokerClientOptions,

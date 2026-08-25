@@ -103,6 +103,16 @@ export interface Usage {
 
 export interface CompleteOptions {
   task: TaskName
+  /**
+   * Override the chain of models to try.
+   *
+   * The task chains name Router models. A provider reached directly through the
+   * compute broker serves its own model and has never heard of those names, so
+   * that path supplies its own chain. Without this the Router's model ids would
+   * be sent to a provider that cannot serve them, and every attempt would fail
+   * for a reason that looks like an outage.
+   */
+  models?: readonly ModelSpec[]
   messages: OpenAI.ChatCompletionMessageParam[]
   /** Ask for strict JSON matching a schema. */
   jsonSchema?: { name: string; schema: Record<string, unknown> }
@@ -140,7 +150,7 @@ export async function complete(
   client: OpenAI,
   opts: CompleteOptions,
 ): Promise<CompleteResult> {
-  const chain: readonly ModelSpec[] = CHAINS[opts.task]
+  const chain: readonly ModelSpec[] = opts.models ?? CHAINS[opts.task]
   const attempts: Array<{ model: string; error: string }> = []
 
   for (const [index, model] of chain.entries()) {
