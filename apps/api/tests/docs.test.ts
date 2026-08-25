@@ -260,3 +260,26 @@ test('the README does not promise the absence of a feature that exists', () => {
     )
   }
 })
+
+test('every command the README advertises actually exists', () => {
+  /*
+   * The ledger has had this check since it drifted there. The README did not,
+   * and the first command added to it after that was wrong — `test:compute`
+   * written against @ogt/api when the script lives in @ogt/og. Somebody
+   * following the README to verify the wallet-paid inference path would have
+   * got "command not found" and reasonably concluded the claim was empty.
+   */
+  const declared = scripts()
+  const missing: string[] = []
+
+  for (const [, script, pkg] of readme().matchAll(/npm run ([a-z:]+)(?: -w (@ogt\/[a-z]+))?/g)) {
+    const owner = pkg ?? 'ogt'
+    if (script === undefined) continue
+    const names = declared.get(owner)
+
+    if (!names) missing.push(`${script} — no package ${owner}`)
+    else if (!names.has(script)) missing.push(`${script} — not a script in ${owner}`)
+  }
+
+  assert.deepEqual(missing, [], 'the README advertises commands that do not exist')
+})

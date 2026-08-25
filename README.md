@@ -165,7 +165,7 @@ OG_INFERENCE_MODE=broker
 The marketplace requires a **1 0G minimum** in the ledger before a provider will
 answer, and funding it is `transferFund` *after* `addLedger` — skipping that
 step returns a "requires 1 0G" error that reads like an empty balance when the
-balance is fine. `npm run test:compute -w @ogt/api` runs a live call on this
+balance is fine. `npm run test:compute -w @ogt/og` runs a live call on this
 path and prints what it cost.
 
 ### Run
