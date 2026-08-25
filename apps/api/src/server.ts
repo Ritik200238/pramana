@@ -9,18 +9,23 @@
 
 import { timingSafeEqual } from 'node:crypto'
 import Fastify from 'fastify'
+import type { FastifyBaseLogger } from 'fastify'
 import cors from '@fastify/cors'
 import multipart from '@fastify/multipart'
 import { z } from 'zod'
+import { ethers } from 'ethers'
 import { sql } from 'drizzle-orm'
 import {
   AnchorClient,
-  OGRouterError,
   CoachClient,
-  assertAllChainsAreTeeAttested,
-  createClient,
   NETWORKS,
+  OGRouterError,
   OGStorage,
+  assertAllChainsAreTeeAttested,
+  chooseService,
+  createBrokerClient,
+  createClient,
+  listChatServices,
 } from '@ogt/og'
 import type OpenAI from 'openai'
 import { loadConfig } from './config.ts'
@@ -90,6 +95,69 @@ export interface ServerOverrides {
   quiet?: boolean
 }
 
+/**
+ * An OpenAI client that pays providers directly from the wallet.
+ *
+ * Discovery happens once at boot rather than per request: the marketplace is a
+ * contract read, and doing it on the path a person is waiting on would add a
+ * chain round trip to every meal.
+ *
+ * Refuses rather than falls back. A deployment that asked for the broker and
+ * silently got the Router would be spending money in a way nobody chose, and
+ * the operator would find out from a bill.
+ */
+async function buildBrokerClient(
+  config: ReturnType<typeof loadConfig>,
+  log: FastifyBaseLogger,
+): Promise<OpenAI> {
+  let broker: { inference: never }
+  try {
+    const { createZGComputeNetworkBroker } = await import('@0glabs/0g-serving-broker')
+    const provider = new ethers.JsonRpcProvider(
+      config.OG_RPC_URL_OVERRIDE ?? NETWORKS[config.OG_NETWORK].rpcUrl,
+      NETWORKS[config.OG_NETWORK].chainId,
+      { staticNetwork: true },
+    )
+    broker = (await createZGComputeNetworkBroker(
+      new ethers.Wallet(config.OG_STORAGE_PRIVATE_KEY, provider) as never,
+    )) as never
+  } catch (error) {
+    throw new Error(
+      'OG_INFERENCE_MODE=broker needs @0glabs/0g-serving-broker installed. It is a ' +
+        'devDependency because it carries 20 production advisories; installing it is the ' +
+        'decision for whoever runs it. See VERIFICATION.md. ' +
+        (error instanceof Error ? error.message : ''),
+    )
+  }
+
+  const service = chooseService(await listChatServices(broker.inference))
+  const { endpoint } = await getServiceMetadata(broker, service.provider)
+
+  log.info(
+    { provider: service.provider, model: service.model, tee: service.teeVerified },
+    'inference is paid directly from the wallet, with no API key',
+  )
+
+  return createBrokerClient({
+    broker: broker.inference,
+    provider: service.provider,
+    endpoint,
+    // Unsettled fees accumulate until a provider stops answering, so a failure
+    // here has to be visible rather than swallowed.
+    onSettleError: (error) => log.error({ err: error }, 'settling an inference fee failed'),
+  })
+}
+
+async function getServiceMetadata(
+  broker: { inference: never },
+  provider: string,
+): Promise<{ endpoint: string; model: string }> {
+  const inference = broker.inference as unknown as {
+    getServiceMetadata: (p: string) => Promise<{ endpoint: string; model: string }>
+  }
+  return inference.getServiceMetadata(provider)
+}
+
 export async function buildServer(overrides: ServerOverrides = {}) {
   const config = loadConfig()
 
@@ -137,7 +205,24 @@ export async function buildServer(overrides: ServerOverrides = {}) {
 
   // After the limiter, so a replayed write cannot be used to spend past it.
   await app.register(idempotencyPlugin, { db })
-  const openai = overrides.openai ?? createClient({ apiKey: config.OG_ROUTER_API_KEY })
+  /*
+   * Whichever way this deployment reaches 0G Compute.
+   *
+   * The broker path pays providers directly from the wallet and needs no key
+   * from anybody. It was built and verified live against the real marketplace
+   * well before this line existed — which meant a working integration nothing
+   * could select, the defect this repository keeps producing, committed here by
+   * the person writing about it.
+   *
+   * The SDK is loaded on demand because it is a devDependency: it carries 20
+   * production advisories, and a deployment that does not choose this path
+   * should not carry them. An operator choosing it installs it deliberately.
+   */
+  const openai =
+    overrides.openai ??
+    (config.OG_INFERENCE_MODE === 'broker'
+      ? await buildBrokerClient(config, app.log)
+      : createClient({ apiKey: config.OG_ROUTER_API_KEY! }))
   const storage =
     overrides.storage ??
     new OGStorage({
@@ -190,7 +275,7 @@ export async function buildServer(overrides: ServerOverrides = {}) {
     secureCookies: config.NODE_ENV === 'production',
   })
   await registerUserRoutes(app, { db })
-  await registerMealRoutes(app, { db, openai, routerApiKey: config.OG_ROUTER_API_KEY })
+  await registerMealRoutes(app, { db, openai, routerApiKey: config.OG_ROUTER_API_KEY ?? '' })
   await registerChatRoutes(app, { db, openai })
   await registerDayRoutes(app, { db })
   await registerCoachRoutes(app, { db, openai })

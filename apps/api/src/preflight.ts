@@ -115,7 +115,21 @@ async function main(): Promise<void> {
 
   // ------------------------------------------------------------- 0G Compute
 
-  await check('0G Router catalogue', true, async () => {
+  /*
+   * Required only when this deployment actually uses the Router.
+   *
+   * These were unconditionally required, written before the wallet-paid path
+   * existed — so a broker deployment would be failed by preflight for lacking a
+   * key it has no use for, and the gate meant to protect a deploy would have
+   * blocked a working one.
+   */
+  const usesRouter = config.OG_INFERENCE_MODE === 'router'
+
+  await check('0G Router catalogue', usesRouter, async () => {
+    if (!usesRouter) {
+      return { state: 'warn', detail: 'not used: OG_INFERENCE_MODE=broker' }
+    }
+
     const response = await fetch(`${ROUTER_BASE_URL}/models`, {
       signal: AbortSignal.timeout(20_000),
     })
@@ -145,7 +159,11 @@ async function main(): Promise<void> {
     return { state: 'ok', detail: `${live.size} models, every routed model TEE-attested` }
   })
 
-  await check('0G Router inference', true, async () => {
+  await check('0G Router inference', usesRouter, async () => {
+    if (!usesRouter) {
+      return { state: 'warn', detail: 'not used: OG_INFERENCE_MODE=broker' }
+    }
+
     const response = await fetch(`${ROUTER_BASE_URL}/chat/completions`, {
       method: 'POST',
       headers: {
@@ -192,6 +210,10 @@ async function main(): Promise<void> {
   })
 
   await check('0G Router balance', false, async () => {
+    if (!usesRouter) {
+      return { state: 'warn', detail: 'not used: OG_INFERENCE_MODE=broker' }
+    }
+
     if (!config.OG_ROUTER_MANAGEMENT_KEY) {
       return {
         state: 'warn',

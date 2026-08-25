@@ -16,10 +16,36 @@ const schema = z.object({
 
   DATABASE_URL: z.string().url(),
 
-  /** 0G Compute Router inference key. Created at https://pc.0g.ai. */
+  /**
+   * Which way this deployment reaches 0G Compute.
+   *
+   * `router` goes through the hosted Router with an sk- key: simpler to
+   * operate, and the default. `broker` pays providers directly from the wallet
+   * in `OG_STORAGE_PRIVATE_KEY`, with no key issued by anybody and settlement on
+   * 0G Chain.
+   *
+   * The broker path was built and verified live long before this existed, and
+   * without it no deployment could actually select it — a working integration
+   * that nothing could reach, which is this repository's most persistent defect
+   * and was self-inflicted here.
+   *
+   * Choosing it also means installing `@0glabs/0g-serving-broker`, which is a
+   * devDependency because it carries 20 production advisories. That trade is
+   * recorded in VERIFICATION.md and is the operator's to make.
+   */
+  OG_INFERENCE_MODE: z.enum(['router', 'broker']).default('router'),
+
+  /**
+   * 0G Compute Router inference key. Created at https://pc.0g.ai.
+   *
+   * Optional in `broker` mode, where there is no key to have. Required in
+   * `router` mode, and checked below rather than here, because zod cannot make
+   * one field's requirement depend on another inside the same object.
+   */
   OG_ROUTER_API_KEY: z
     .string()
-    .startsWith('sk-', 'Expected an inference key. Management keys (mk-) cannot call inference.'),
+    .startsWith('sk-', 'Expected an inference key. Management keys (mk-) cannot call inference.')
+    .optional(),
 
   /**
    * Management key for reading the Router account balance.
@@ -127,6 +153,19 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       .map((issue) => `  ${issue.path.join('.')}: ${issue.message}`)
       .join('\n')
     throw new Error(`Invalid environment configuration:\n${detail}`)
+  }
+
+  /*
+   * The one cross-field rule. A router deployment with no key boots and then
+   * fails on the first meal somebody photographs, which is the worst possible
+   * moment to discover it.
+   */
+  if (parsed.data.OG_INFERENCE_MODE === 'router' && !parsed.data.OG_ROUTER_API_KEY) {
+    throw new Error(
+      'Invalid environment configuration:\n  OG_ROUTER_API_KEY: Required when ' +
+        'OG_INFERENCE_MODE is "router". Set a key, or set OG_INFERENCE_MODE=broker to pay ' +
+        'providers directly from the wallet.',
+    )
   }
 
   const { CORS_ORIGINS, ...rest } = parsed.data

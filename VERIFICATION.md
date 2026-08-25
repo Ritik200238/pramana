@@ -391,6 +391,47 @@ hides. Records written *before* taking custody stay under the key we held; this
 applies going forward. And there is no reset: lose the words and those records
 stay closed.
 
+### The wallet-paid path is now selectable, which it was not
+
+    npm test -w @ogt/api    # tests/inference-mode.test.ts
+
+The broker path was built, unit tested, and **verified live against the real
+marketplace** — the product's own `complete()` answering through a TEE-attested
+provider with no API key anywhere. And no deployment could select it. The server
+always constructed a Router client.
+
+So the flagship 0G integration was the most thoroughly proven unreachable code
+in the repository: this project's most persistent defect, committed by the
+person who kept finding it elsewhere.
+
+`OG_INFERENCE_MODE` now chooses:
+
+| | needs | production advisories |
+|---|---|---|
+| `router` (default) | an `sk-` key from pc.0g.ai | 0 |
+| `broker` | nothing but the wallet already used for storage | 20, opt-in |
+
+The SDK is imported dynamically so a deployment that does not choose this path
+does not carry its advisories — production stays at **0** by default, and
+choosing otherwise is a decision somebody makes rather than one made for them.
+Broker mode refuses to start rather than falling back, because a deployment that
+asked to pay from its own wallet and silently got a hosted service would find
+out from a bill.
+
+**Preflight had drifted the same way.** Its Router checks were unconditionally
+required, having been written before this path existed — so the gate meant to
+protect a deploy would have failed a working broker deployment for lacking a key
+it has no use for. Conditional now.
+
+Seven tests. Five mutations, all caught: a server that reads the mode and
+ignores it, router mode booting without a key, a typo silently becoming router,
+preflight requiring the Router again, and a static import of the SDK.
+
+One of those found a loose assertion rather than a defect. The typo case had no
+key, so the cross-field rule rejected it first and the test passed against a
+build that *did* silently default the typo. It supplies a key now, so the
+rejection has to be about the mode.
+
 ### Contrast — the one accessibility property people notice immediately
 
     npm test -w @ogt/web    # tests/contrast.test.ts
@@ -1332,7 +1373,7 @@ Nothing here rests on being believed.
 
 ```bash
 npm install
-npm test --workspaces                      # 565 tests: 53 core, 95 og, 260 api, 157 web
+npm test --workspaces                      # 572 tests: 53 core, 95 og, 267 api, 157 web
 npm run typecheck --workspaces             # four packages, strict
 npm audit --omit=dev                       # 0 production vulnerabilities
 cd packages/contracts && forge test        # 116 tests
