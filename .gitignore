@@ -12,3 +12,4 @@ bench-results/
 
 # Vendored 0G reference material — SDKs and docs cloned for reference, not our code.
 oglabs resources/
+.gstack/
