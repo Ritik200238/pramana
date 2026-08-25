@@ -1438,3 +1438,24 @@ body {
   margin: 0 0 10px;
   line-height: 1.55;
 }
+
+/* The screen shown when a render throws — see components/ErrorBoundary.tsx.
+   Shaped like .blocked: centred, unhurried, nothing red. A person who has hit
+   a bug in our code has not made a mistake either. */
+.boundary {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  align-items: center;
+  justify-content: center;
+  min-height: 100dvh;
+  padding: 2rem 1.5rem;
+  text-align: center;
+}
+
+.boundary-message {
+  max-width: 28ch;
+  margin: 0;
+  font-size: 1.05rem;
+  line-height: 1.5;
+}
