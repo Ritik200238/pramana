@@ -170,10 +170,18 @@ export function You({ onSignedOut }: YouProps) {
                     What you do not get is the signature itself, so this rests on 0G having
                     done the check honestly. It is a receipt, not a proof you can re-run.
                   </p>
+                  {/*
+                    * Kept accurate rather than kept short. This paragraph said
+                    * moving the key onto the device was "the next thing to
+                    * change" for a while after it had already changed, which
+                    * made the most trust-sensitive sentence in the product the
+                    * one that was out of date.
+                    */}
                   <p>
-                    Separately: your stored records are encrypted to a key we currently hold on
-                    your behalf, because signing in is a phone number and nothing else. We can
-                    read them. Moving that key onto your device is the next thing to change.
+                    Separately: by default your stored records are encrypted to a key we hold
+                    on your behalf, because signing in is a phone number and nothing else. We
+                    can read them. You can take that key instead — see below — and then we
+                    cannot.
                   </p>
                 </details>
               </>
