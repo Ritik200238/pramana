@@ -8,7 +8,8 @@
     "typecheck": "tsc --noEmit",
     "test": "node --test --experimental-strip-types tests/*.test.ts",
     "test:live": "node --test --experimental-strip-types tests/live/registry.test.ts tests/live/inference.test.ts",
-    "test:fork": "node --test --experimental-strip-types tests/live/anchor.fork.test.ts"
+    "test:fork": "node --test --experimental-strip-types tests/live/anchor.fork.test.ts",
+    "test:storage": "node --test --experimental-strip-types tests/live/storage.test.ts"
   },
   "dependencies": {
     "@0gfoundation/0g-storage-ts-sdk": "^1.2.11",
