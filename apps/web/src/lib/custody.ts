@@ -10,6 +10,12 @@
  * dependency and most people will never take custody; making everybody download
  * it to open a nutrition app — on a connection where that download is a real
  * cost — to support a setting they will not use would be the wrong trade.
+ *
+ * That only became true when the service worker stopped precaching it. A
+ * dynamic import defers parsing; precaching downloads the bytes anyway, so for
+ * a while this paragraph described an intention rather than what happened. The
+ * chunk is excluded in vite.config.ts and a test in tests/bundle-budget.test.ts
+ * fails if it comes back — the claim and the behaviour are tied together now.
  */
 
 import { freshImport } from './fresh-import.ts'

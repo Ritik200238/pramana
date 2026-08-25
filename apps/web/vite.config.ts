@@ -42,6 +42,21 @@ export default defineConfig({
         // The shell is precached so the camera screen opens instantly on a bad
         // connection. Target is under two seconds cold to camera-ready.
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
+        /*
+         * Everything except the wallet library.
+         *
+         * `custody.ts` imports ethers dynamically so that people who never take
+         * their own key do not pay for it, and that reasoning was quietly false:
+         * precaching downloads every chunk on first visit, so the lazy import
+         * deferred parsing and nothing else. The chunk is 140 KB gzipped —
+         * larger than the entire rest of the first load — and on a metered
+         * connection it is a real cost for a setting most people will not use.
+         *
+         * Left out of the precache and fetched when it is actually needed. The
+         * one moment it is needed is a deliberate act on a settings screen, not
+         * something anybody does mid-meal on a train.
+         */
+        globIgnores: ['**/ethers-*.js'],
         navigateFallback: '/index.html',
         runtimeCaching: [
           {
@@ -92,5 +107,19 @@ export default defineConfig({
     // Indian mid-range Android is the target device. Keep the bundle honest.
     chunkSizeWarningLimit: 300,
     target: 'es2020',
+    rollupOptions: {
+      output: {
+        /*
+         * A predictable name for the wallet chunk, so the service worker can be
+         * told not to precache it. A content hash alone cannot be matched by a
+         * glob written before the build runs.
+         */
+        manualChunks: (id: string) =>
+          id.includes('node_modules/ethers') || id.includes('node_modules/@noble')
+            ? 'ethers'
+            : undefined,
+        chunkFileNames: 'assets/[name]-[hash].js',
+      },
+    },
   },
 })

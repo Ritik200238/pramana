@@ -391,6 +391,47 @@ hides. Records written *before* taking custody stay under the key we held; this
 applies going forward. And there is no reset: lose the words and those records
 stay closed.
 
+### What a first visit costs, on metered data
+
+    npm run build -w @ogt/web && npm test -w @ogt/web   # tests/bundle-budget.test.ts
+
+India-first on mid-range Android over metered data means the first load is not a
+vanity metric. It is money, and it is the difference between opening the app on
+a train and giving up on it.
+
+The number that matters is what the service worker **precaches**, not what the
+bundler prints. Precaching downloads every chunk it lists on the first visit, so
+a lazily imported chunk saves nothing if it is precached anyway — the import
+defers parsing and the bytes arrive regardless.
+
+That is exactly what was happening, and the comment in `custody.ts` said
+otherwise. ethers is imported dynamically so that people who never take their
+own key do not pay for it; the precache pulled all 140 KB of it down for
+everybody, which made the reasoning false and the effort pointless.
+
+|  | precached | first load, gzipped |
+|---|---|---|
+| before | 14 entries, 643.6 KiB | ~220 KB |
+| after | 13 entries, 270.8 KiB | **80.2 KB** |
+
+**A 64% smaller first visit** for everybody who never takes custody, which is
+almost everybody. The chunk still ships — it is excluded from the precache, not
+from the build — and is fetched at the one moment it is needed, which is a
+deliberate act on a settings screen rather than something anybody does mid-meal.
+
+| Property | Proved by |
+|---|---|
+| The wallet library is not precached | Test, against the built worker |
+| It still exists, so custody is not broken | Test |
+| A first visit stays under 110 KB gzipped | Test, naming the largest assets when it fails |
+| No single precached asset exceeds 90 KB | Test — one commit is how a budget gets eaten |
+
+Checked by breaking it both ways: restoring the precache entry and removing the
+chunk split each fail three of the four.
+
+The budget is meant to start a conversation rather than be raised quietly.
+Raising it is the decision.
+
 ### A deploy landing while somebody has the app open
 
     npm test -w @ogt/web    # tests/fresh-import.test.ts
@@ -1180,7 +1221,7 @@ Nothing here rests on being believed.
 
 ```bash
 npm install
-npm test --workspaces                      # 541 tests: 53 core, 91 og, 258 api, 139 web
+npm test --workspaces                      # 545 tests: 53 core, 91 og, 258 api, 143 web
 npm run typecheck --workspaces             # four packages, strict
 npm audit --omit=dev                       # 0 production vulnerabilities
 cd packages/contracts && forge test        # 116 tests
