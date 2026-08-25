@@ -309,21 +309,38 @@ unlocking through the pool instead of the held connection, granting a lock
 Postgres refused, and never releasing — each fail the suite; reverting each
 turns it green again.
 
-**NOT VERIFIED here, but now checkable anywhere:**
+**VERIFIED against real PostgreSQL 18.4, two sessions genuinely competing.**
 
     DATABASE_URL=postgres://... npm run test:locks -w @ogt/api
 
-It asserts the premise the fix rests on — a second session is refused the lock
-the first holds, a different worker's lock is unaffected, the lock is visible in
-`pg_locks`, and releasing genuinely frees it. Without a `DATABASE_URL` it skips
-loudly.
+Docker is not installed on the machine this was built on, so an embedded
+PostgreSQL 18 was used instead. The first attempt died — a background worker
+hit `0xC0000142`, a DLL initialisation failure in this sandbox — and the server
+log named the process: autovacuum. Started with `autovacuum=off` it ran, and the
+test passes:
 
-It was attempted on the machine this was built on, with an embedded PostgreSQL
-18 rather than accepting the absence of Docker as an answer. `initdb` succeeded
-and the server reached "ready to accept connections", then a background worker
-died with `0xC0000142` — a DLL initialisation failure in that sandbox, not a
-fault in this code. So what ships is a test that travels to a machine which can
-run it, rather than a result claimed from one that could not.
+```
+ok 1 - a second instance is refused the lock the first is holding
+```
+
+It asserts a second session is refused the lock the first holds, that a
+different worker's lock is unaffected, that the lock is visible in `pg_locks`,
+and that releasing genuinely frees it. Checked by breaking it: granting the lock
+regardless of what Postgres said, releasing without unlocking, and giving every
+worker the same key each fail the test; reverting each turns it green.
+
+Two things surfaced on the way that no fake would have shown.
+
+The first run reported the lock refused on what looked like a fresh server, and
+that was correct: `pg_locks` showed an idle `postgres.js` backend still holding
+it — the previous test run, killed mid-pass, whose connection outlived the
+process. `classid 3486972939` / `objid 2740220892` are exactly the two halves of
+`lockKey('scheduler')`. That is the property this design was chosen for,
+observed rather than asserted: the lock outlives a killed holder only as long as
+its connection, and Postgres frees it without anybody cleaning up.
+
+The second was a deadlock in the test itself, now fixed in the application too —
+see the pool guard below.
 
 Deliberately not wrapped in a transaction. A pass that threw would roll back
 snapshot rows whose uploads have already been paid for and cannot roll back.
