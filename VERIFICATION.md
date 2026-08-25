@@ -275,6 +275,50 @@ Each of these is asserted by a test that fails if the property breaks:
   derived from the handlers rather than trusted from a list — and every route
   string in that list names a path some route actually registers.
 
+### Running more than one instance
+
+Every background worker guards itself against overlapping passes with a boolean,
+and that boolean lives in one process. Two API instances — the first thing that
+happens when anybody scales past a single container — both walk through it.
+
+The chain writes survive that on their own, and this is worth being precise
+about because it is the part that would have been expensive to get wrong: every
+chain write carries a deterministic EIP-712 nonce derived from stable data (the
+snapshot's own uuid; `userId:mint`; `userId:learnedCount:evolve`), and the
+contract rejects a reused one. No snapshot is anchored twice and no coach is
+minted twice however many instances race.
+
+Snapshotting did not survive it. Two instances see the same users due, both
+build a snapshot, and both **pay to upload it to 0G Storage before either writes
+the row** that would have revealed the duplicate. A unique index cannot help:
+the money is spent before there is anything to conflict with.
+
+Closed with a Postgres advisory lock per worker pass — no table, no migration,
+and Postgres drops it when the holder dies, which a claim row would not.
+
+| Property | How it is checked |
+|---|---|
+| The lock is taken and released on the same connection | Test, against a pool that hands out a distinct connection per reserve |
+| A held lock is refused and the connection is not leaked | Test |
+| A refused pass pays for no upload | Behavioural test against real Postgres (PGlite), counting uploads |
+| Every worker consults the lock and releases it in a `finally` | Test, read from the workers' source |
+| Lock ids are stable, distinct per worker, within `int8` | Test |
+
+Checked by breaking it. Four mutations — a worker ignoring a held lock,
+unlocking through the pool instead of the held connection, granting a lock
+Postgres refused, and never releasing — each fail the suite; reverting each
+turns it green again.
+
+**NOT VERIFIED:** contention between two real Postgres sessions. There is no
+Postgres server and no Docker on the machine this was built on, and PGlite is
+single-session, so the protocol is proved against a recording pool rather than
+against two connections genuinely competing. The remaining risk is confined to
+whether `pg_try_advisory_lock` behaves as documented, not to whether this code
+calls it correctly.
+
+Deliberately not wrapped in a transaction. A pass that threw would roll back
+snapshot rows whose uploads have already been paid for and cannot roll back.
+
 ### Dependencies
 
 `npm audit --omit=dev` reports **0 vulnerabilities**. Dev dependencies carry
