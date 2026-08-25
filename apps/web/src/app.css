@@ -1574,3 +1574,47 @@ body {
   font-variant-numeric: tabular-nums;
   opacity: 0.8;
 }
+
+/* What we remember — see components/Remembered.tsx. Their words are the largest
+   thing in each row; the metadata around them is deliberately quiet. */
+.fact-list {
+  margin: 1rem 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.6rem;
+}
+
+.fact {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.2rem 0.75rem;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--line, rgba(0, 0, 0, 0.12));
+  border-radius: 0.4rem;
+}
+
+.fact-kind {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  opacity: 0.6;
+}
+
+.fact-when {
+  font-size: 0.75rem;
+  opacity: 0.6;
+  text-align: right;
+}
+
+.fact-verbatim {
+  grid-column: 1 / -1;
+  margin: 0.15rem 0 0.4rem;
+  font-size: 1rem;
+  line-height: 1.45;
+}
+
+.fact button {
+  grid-column: 1 / -1;
+  justify-self: start;
+}

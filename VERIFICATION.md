@@ -785,16 +785,6 @@ were fixed this session.
 
 ## Known gaps, not yet closed
 
-**Facts are remembered but never shown.** What a person says in chat is
-extracted into `life_facts` and does real work — it feeds the coach's context,
-the weekly review, the proactive nudge, the encrypted snapshot and the export.
-Nothing displays it in-app, and no endpoint lists it, so `POST
-/users/me/facts/:factId/resolve` resolves something nobody can see. The gap is a
-list endpoint plus a small "what I remember" view; until then an app that
-remembers a knee hurt in August offers no way to say it healed. Named in the
-reachability test's exemption list so it stays a decision rather than becoming
-invisible.
-
 
 - **Rate limits are per-process.** Running more than one instance multiplies
   every limit by the instance count. The server warns about this at boot in
@@ -842,7 +832,7 @@ Nothing here rests on being believed.
 
 ```bash
 npm install
-npm test --workspaces                      # 429 tests: 45 core, 91 og, 218 api, 75 web
+npm test --workspaces                      # 439 tests: 45 core, 91 og, 222 api, 81 web
 npm run typecheck --workspaces             # four packages, strict
 npm audit --omit=dev                       # 0 production vulnerabilities
 cd packages/contracts && forge test        # 113 tests

@@ -20,6 +20,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api, type Me, type ProofReceipt } from '../lib/api.ts'
 import { Custody } from '../components/Custody.tsx'
+import { Remembered } from '../components/Remembered.tsx'
 
 export interface YouProps {
   onSignedOut: () => void
@@ -236,6 +237,12 @@ export function You({ onSignedOut }: YouProps) {
           Ask me less
         </button>
       </section>
+
+      {/* ----------------------------------------------------- remembered */}
+      {/* Above custody deliberately: what is remembered comes before who can
+          read it. Somebody wondering about their privacy wants to see what
+          there is before being told who holds the key to it. */}
+      <Remembered />
 
       {/* --------------------------------------------------------- custody */}
       {/* Directly under the proof panel: one says where your data was

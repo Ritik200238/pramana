@@ -154,6 +154,15 @@ export interface StreakState {
   loggedToday: boolean
 }
 
+/** Something a person told us, kept in their own words. */
+export interface RememberedFact {
+  id: string
+  kind: 'sleep' | 'workout' | 'mood' | 'symptom' | 'energy' | 'weight' | string
+  /** Verbatim. We never show them our paraphrase and call it what they said. */
+  verbatim: string
+  occurredAt: string
+}
+
 export interface MarkerSeries {
   code: string
   name: string
@@ -624,6 +633,10 @@ export const api = {
     return request<{ message: ProactiveMessage | null }>(
       `/users/me/proactive?utcOffsetMinutes=${utcOffsetMinutes()}`,
     )
+  },
+
+  facts() {
+    return request<{ facts: RememberedFact[] }>('/users/me/facts')
   },
 
   resolveFact(factId: string) {

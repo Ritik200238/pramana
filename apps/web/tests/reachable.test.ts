@@ -29,17 +29,6 @@ const NOT_FROM_A_SCREEN: Record<string, string> = {
   verifyCode: 'sign-in',
   // Used by the offline queue, which flushes without anybody pressing anything.
   writeQueue: 'offline queue internals',
-  /*
-   * Facts are extracted from chat and drive the coach, the weekly review, the
-   * proactive nudge and the export — so they are load-bearing — but nothing
-   * shows them in-app, and there is no endpoint that lists them. Resolving a
-   * fact somebody cannot see is not a feature yet.
-   *
-   * Recorded here rather than deleted: the server route is real and the gap is
-   * a missing list endpoint plus a small "what I remember" view. Named so it
-   * stays a decision instead of becoming invisible.
-   */
-  resolveFact: 'no facts list exists yet — see VERIFICATION.md, known gaps',
 }
 
 function readAll(dir: string, skip: string): string {

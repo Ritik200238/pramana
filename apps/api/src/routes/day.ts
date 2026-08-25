@@ -8,6 +8,8 @@
 
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
+import { and, desc, eq, isNull } from 'drizzle-orm'
+import { lifeFacts } from '../db/schema.ts'
 import type { Database } from '../db/index.ts'
 import { currentUserId } from '../plugins/auth.ts'
 import { getDaySummary } from '../services/day.ts'
@@ -126,6 +128,45 @@ export async function registerDayRoutes(app: FastifyInstance, deps: DayRouteDeps
 
     await recordProactive(deps.db, userId, message)
     return reply.status(200).send({ message })
+  })
+
+  /**
+   * What we remember about them, in their own words.
+   *
+   * Everything here was already doing work — it feeds the coach's context, the
+   * weekly review, the proactive nudge, the encrypted snapshot and the export —
+   * and none of it was visible. R6 says we listen and remember, always; a person
+   * who cannot see what was remembered has to take that on trust, and the one
+   * control that closes a topic had nothing to close from.
+   *
+   * Unresolved only. A finished topic is not something to show somebody again;
+   * that is the whole point of resolving it.
+   */
+  app.get('/users/me/facts', async (request, reply) => {
+    const userId = currentUserId(request)
+
+    const rows = await deps.db
+      .select({
+        id: lifeFacts.id,
+        kind: lifeFacts.kind,
+        verbatim: lifeFacts.verbatim,
+        occurredAt: lifeFacts.occurredAt,
+      })
+      .from(lifeFacts)
+      .where(and(eq(lifeFacts.userId, userId), isNull(lifeFacts.resolvedAt)))
+      .orderBy(desc(lifeFacts.occurredAt))
+      .limit(50)
+
+    return reply.status(200).send({
+      facts: rows.map((row) => ({
+        id: row.id,
+        kind: row.kind,
+        // Their words, never a paraphrase. Showing somebody our summary of what
+        // they said and calling it what they said is its own small betrayal.
+        verbatim: row.verbatim,
+        occurredAt: row.occurredAt.toISOString(),
+      })),
+    })
   })
 
   /** "This is sorted." Closes a topic permanently so it is never raised again. */
