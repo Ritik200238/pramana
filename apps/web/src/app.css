@@ -11,7 +11,19 @@
 :root {
   --ink: #f2f0ec;
   --ink-2: #a7a49e;
-  --ink-3: #6f6d68;
+  /*
+   * Lightened from #6f6d68, which failed WCAG AA everywhere it was used.
+   *
+   * It carried 3.45:1 on the page background and 2.80:1 on a raised surface —
+   * below the 4.5:1 small text needs, and the last one below even the 3:1 that
+   * large text gets. It is used at 10 to 13 pixels on `.stats dt`, `.eyebrow`,
+   * `.tab` and `.step`: the labels above the numbers on the home screen and the
+   * "1 of 2" in the question flow. Real content, read on a phone, often outside.
+   *
+   * This is the lightest it can be while clearing 4.5:1 against every surface it
+   * sits on, so the quiet tone is kept and the text is legible.
+   */
+  --ink-3: #92908b;
   --bg: #14181c;
   --surface: #1c2126;
   --surface-2: #242a30;

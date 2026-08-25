@@ -391,6 +391,38 @@ hides. Records written *before* taking custody stay under the key we held; this
 applies going forward. And there is no reset: lose the words and those records
 stay closed.
 
+### Contrast — the one accessibility property people notice immediately
+
+    npm test -w @ogt/web    # tests/contrast.test.ts
+
+axe covers structure and explicitly cannot cover contrast, because jsdom has no
+layout to measure. That left the property a person notices in the first second
+unchecked — and it was failing.
+
+Contrast lives in the tokens, not the DOM, so it is computed exactly from the
+palette with the WCAG formula. The same arithmetic a browser extension does, no
+browser needed.
+
+**`--ink-3` failed everywhere it was used.**
+
+| | ratio | needed |
+|---|---|---|
+| on `--bg` | 3.45:1 | 4.5:1 |
+| on `--surface` | 3.14:1 | 4.5:1 |
+| on `--surface-2` | **2.80:1** | 4.5:1 — below even the 3:1 large text is allowed |
+
+It is used at 10 to 13 pixels: `.stats dt` (the labels above Protein, Calories
+and Meals on the home screen), `.eyebrow`, `.tab`, and `.step` — the "1 of 2" in
+the question flow. Small text, read on a phone, frequently outdoors.
+
+Changed to `#92908b`, which is the **lightest** value that clears 4.5:1 against
+every surface it sits on — the quiet tone kept, the text legible. Everything
+else in the palette already passed comfortably; `--ink` reaches 15.67:1.
+
+Four mutations, all caught, including renaming a token so the parse finds
+nothing — a contrast check that silently measures an empty palette is the most
+convincing inert guard available.
+
 ### A model that ran out of room mid-answer
 
     npm test -w @ogt/og     # tests/truncation.test.ts
@@ -461,9 +493,8 @@ LabReport, Remembered, Custody.
 
 Scoped to the rules a component in isolation can honestly be judged on —
 landmarks and page titles belong to a document, and failing them here would say
-nothing about the product while making the check easy to ignore. Contrast is not
-covered: jsdom has no layout, so it cannot be measured this way and is not
-claimed.
+nothing about the product while making the check easy to ignore. Contrast is covered separately — see below — because it lives in the tokens
+rather than in the DOM and can be computed exactly rather than measured.
 
 **Mutation found a hole in the rule list.** Removing the progress ring's label
 failed nothing at first, because `image-alt` only covers `<img>` and the ring is
@@ -1301,7 +1332,7 @@ Nothing here rests on being believed.
 
 ```bash
 npm install
-npm test --workspaces                      # 560 tests: 53 core, 95 og, 260 api, 152 web
+npm test --workspaces                      # 565 tests: 53 core, 95 og, 260 api, 157 web
 npm run typecheck --workspaces             # four packages, strict
 npm audit --omit=dev                       # 0 production vulnerabilities
 cd packages/contracts && forge test        # 116 tests
