@@ -381,9 +381,21 @@ back: that the model holds a JSON contract, that the numbers are numbers, that
 the answer is plausible for dal and two rotis, and that the fee settled with no
 error.
 
-The Router path (`sk-` key) remains supported and is still the simpler operational
-default. Both are wired behind the same OpenAI-shaped surface, so the model
-chain, JSON-schema decoding, cost accounting and failover work against either.
+The Router path (`sk-` key) remains supported and is still the production
+default, for a reason worth stating plainly rather than burying.
+
+**Adopting the wallet path costs dependency surface.** Adding
+`@0glabs/0g-serving-broker` as a production dependency took this repository from
+**0 production advisories to 20** (18 low, 2 high) — `adm-zip`, `circomlibjs`
+and `crypto-browserify` among them, plus the whole ethers v5 `@ethersproject/*`
+tree and its vulnerable `elliptic`.
+
+The adapter was written against a structural interface and imports nothing from
+that SDK, so the SDK is a devDependency and production is back to **0**. An
+operator who chooses the wallet path installs it deliberately and takes those 20
+advisories on knowingly. That is the honest trade: the broker is the more
+self-contained integration, and today it is the more expensive one to run in
+production.
 
 
 ### Contracts on the live network — CLOSED

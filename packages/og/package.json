@@ -20,6 +20,7 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
+    "@0glabs/0g-serving-broker": "^0.6.6",
     "@types/node": "^22.10.2",
     "typescript": "^5.7.2"
   }
