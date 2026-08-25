@@ -20,6 +20,7 @@
  *        again... it began to gaslight me."
  */
 
+import { quoteUntrusted } from '@ogt/core'
 import { and, desc, eq, gte, isNull, lt, sql } from 'drizzle-orm'
 import type { Database } from '../db/index.ts'
 import { chatMessages, lifeFacts, meals, users } from '../db/schema.ts'
@@ -56,6 +57,21 @@ export interface ConsiderInput {
  * Returns null far more often than not, and that is the intended behaviour —
  * silence is the default state of this feature.
  */
+/**
+ * A person's own words, short enough to be a nudge.
+ *
+ * Long enough to be recognisable, short enough that the message still reads as
+ * a question rather than a transcript. Control characters go because this
+ * string ends up in the prompt of every later request.
+ */
+function shortQuote(text: string): string {
+  // The fence itself is not wanted here — this is shown to a person, and
+  // `<<<NOTE` on their screen would be nonsense. What is wanted is the cleaning
+  // and the cap that come with it, so the body is taken back out.
+  const lines = quoteUntrusted(text, { maxChars: 120 }).split('\n')
+  return lines.slice(1, -1).join(' ').trim()
+}
+
 export async function considerProactive(input: ConsiderInput): Promise<ProactiveMessage | null> {
   const now = input.now ?? new Date()
   const offset = input.utcOffsetMinutes ?? 330
@@ -124,9 +140,16 @@ async function followUpOnOpenSymptom(
 
   return {
     kind: 'follow_up',
-    // Their words, not our paraphrase. Telling someone their experience was
-    // something other than what they said is its own small betrayal.
-    text: `Still going on — "${fact.verbatim}"? You mentioned it a few days ago.`,
+    /*
+     * Their words, not our paraphrase. Telling somebody their experience was
+     * something other than what they said is its own small betrayal.
+     *
+     * Bounded and stripped of control characters all the same. This message is
+     * stored as an assistant turn and replayed into the coach's prompt, so an
+     * unbounded note here is somebody else's context window — and a note
+     * carrying escape sequences would travel into every later request.
+     */
+    text: `Still going on — "${shortQuote(fact.verbatim)}"? You mentioned it a few days ago.`,
     factId: fact.id,
   }
 }

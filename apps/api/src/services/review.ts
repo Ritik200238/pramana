@@ -15,7 +15,7 @@
  */
 
 import { and, asc, desc, eq, gte, lt, sql } from 'drizzle-orm'
-import { computeTargets, type Targets } from '@ogt/core'
+import { computeTargets, quoteUntrusted, type Targets, untrustedPreamble } from '@ogt/core'
 import type OpenAI from 'openai'
 import { complete } from '@ogt/og'
 import type { Database } from '../db/index.ts'
@@ -363,11 +363,15 @@ export async function gatherRecords(
     facts.weightChangeKg !== null ? `Weight change this week: ${facts.weightChangeKg}kg` : '',
     facts.sleepMeanHours !== null ? `Mean sleep: ${facts.sleepMeanHours}h` : '',
     '',
+    untrustedPreamble(),
+    '',
     `What they told me (last ${days} days):`,
-    ...notes.map(
-      (note) =>
-        `  [${note.occurredAt.toISOString().slice(0, 10)}] ${note.kind}: "${note.verbatim}"${note.value ? ` (${note.value}${note.unit ?? ''})` : ''}`,
-    ),
+    // Fenced for the same reason as the coach's context: this is a prompt, and
+    // every one of these lines was typed by the person the review is about.
+    ...notes.flatMap((note) => [
+      `  [${note.occurredAt.toISOString().slice(0, 10)}] ${note.kind}${note.value ? ` (${note.value}${note.unit ?? ''})` : ''}`,
+      quoteUntrusted(note.verbatim),
+    ]),
   ]
 
   if (markers.length > 0) {

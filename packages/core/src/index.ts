@@ -45,3 +45,11 @@ export {
   type Confidence,
   type ConfidenceInput,
 } from './confidence.ts'
+
+export {
+  MAX_QUOTED_CHARS,
+  containsFence,
+  quoteUntrusted,
+  untrustedPreamble,
+  type QuoteOptions,
+} from './untrusted.ts'

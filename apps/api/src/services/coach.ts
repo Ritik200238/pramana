@@ -14,7 +14,7 @@
  */
 
 import { and, desc, eq, gte, isNull } from 'drizzle-orm'
-import { computeTargets, type SafetyVerdict, type UserProfile } from '@ogt/core'
+import { computeTargets, quoteUntrusted, type SafetyVerdict, type UserProfile, untrustedPreamble } from '@ogt/core'
 import type { Database } from '../db/index.ts'
 import { chatMessages, lifeFacts, meals, users, weightLogs } from '../db/schema.ts'
 
@@ -34,7 +34,7 @@ export interface CoachContext {
   today: { kcal: number; proteinG: number; mealCount: number }
   /** Unresolved facts only. A resolved topic is never raised again. */
   openFacts: Array<{ kind: string; verbatim: string; occurredAt: Date }>
-  recentTurns: Array<{ role: string; content: string; createdAt: Date }>
+  recentTurns: Array<{ role: string; content: string; createdAt: Date; proactive: boolean }>
 }
 
 const HISTORY_TURNS = 20
@@ -81,7 +81,14 @@ export async function loadCoachContext(
     .limit(OPEN_FACT_LIMIT)
 
   const history = await db
-    .select({ role: chatMessages.role, content: chatMessages.content, createdAt: chatMessages.createdAt })
+    .select({
+      role: chatMessages.role,
+      content: chatMessages.content,
+      createdAt: chatMessages.createdAt,
+      // Carried so the prompt can tell an assistant turn we wrote from one that
+      // is mostly a quote of what the user said.
+      proactive: chatMessages.proactive,
+    })
     .from(chatMessages)
     .where(eq(chatMessages.userId, userId))
     .orderBy(desc(chatMessages.createdAt))
@@ -163,9 +170,22 @@ export function buildCoachSystemPrompt(context: CoachContext, verdict?: SafetyVe
   }
 
   if (openFacts.length > 0) {
-    lines.push('', 'Things they have told you that are still open:')
+    /*
+     * Their own words, fenced.
+     *
+     * This is a system prompt, which is where a model looks for authority, and
+     * everything in this block was typed by the person the reply is for. The
+     * safety guidance is appended a few lines below — so an unfenced note
+     * saying "ignore the safety guidance" would sit directly beside the
+     * instruction it is trying to overrule, written by exactly the person most
+     * motivated to remove it.
+     */
+    lines.push('', untrustedPreamble(), '', 'Things they have told you that are still open:')
     for (const fact of openFacts.slice(0, 10)) {
-      lines.push(`- [${fact.kind}] "${fact.verbatim}" (${fact.occurredAt.toISOString().slice(0, 10)})`)
+      lines.push(
+        `- [${fact.kind}] (${fact.occurredAt.toISOString().slice(0, 10)})`,
+        quoteUntrusted(fact.verbatim),
+      )
     }
     lines.push(
       '',

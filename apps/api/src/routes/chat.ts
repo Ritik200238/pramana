@@ -6,6 +6,7 @@
  * stop telling you things is to make talking feel like filing a form.
  */
 
+import { quoteUntrusted } from '@ogt/core'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import type OpenAI from 'openai'
@@ -67,9 +68,18 @@ export async function registerChatRoutes(app: FastifyInstance, deps: ChatRouteDe
         task: 'coach',
         messages: [
           { role: 'system', content: buildCoachSystemPrompt(context, gate.verdict) },
+          /*
+           * A proactive nudge is an assistant turn that is mostly a quote of
+           * something the user typed — "Still going on: ...?" — so replaying it
+           * unchanged launders their words into assistant authority, which a
+           * model weighs more heavily than its own user turns.
+           *
+           * Fenced on the way back in. Everything we actually wrote is replayed
+           * as-is.
+           */
           ...context.recentTurns.map((turn) => ({
             role: turn.role as 'user' | 'assistant',
-            content: turn.content,
+            content: turn.proactive ? quoteUntrusted(turn.content) : turn.content,
           })),
           { role: 'user', content: body.message },
         ],
