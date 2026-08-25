@@ -103,6 +103,8 @@ function EatNow({ onBlocked }: BlockHandler) {
   const [proteinLeft, setProteinLeft] = useState<number | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [remember, setRemember] = useState(false)
+  const [remembered, setRemembered] = useState(false)
 
   const ask = useCallback(async () => {
     setBusy(true)
@@ -115,6 +117,27 @@ function EatNow({ onBlocked }: BlockHandler) {
       }
       setAnswer(result.suggestion)
       setProteinLeft(result.proteinLeftG)
+
+      if (remember) {
+        // After the suggestion, not before. Saving a pantry for a request that
+        // then failed would teach us from a moment the person never saw.
+        const items = available
+          .split(/[,\n]/)
+          .map((item) => item.trim())
+          .filter(Boolean)
+
+        if (items.length > 0) {
+          try {
+            await api.setPantry(items)
+            setRemembered(true)
+            setRemember(false)
+          } catch {
+            // Remembering is a convenience. Failing at it must not look like
+            // the suggestion failed, because the suggestion is what they asked
+            // for and it worked.
+          }
+        }
+      }
     } catch (caught) {
       // The server writes a better sentence than we can for the cases it knows
       // about — being rate limited, most often. Ours is the fallback.
@@ -125,7 +148,7 @@ function EatNow({ onBlocked }: BlockHandler) {
     } finally {
       setBusy(false)
     }
-  }, [available, onBlocked])
+  }, [available, onBlocked, remember])
 
   return (
     <div className="panel">
@@ -144,9 +167,31 @@ function EatNow({ onBlocked }: BlockHandler) {
         />
       </label>
 
+      {/*
+        R4 — friction falls as the record grows. Typing your kitchen out every
+        time is exactly the friction that rule exists to remove, and the route
+        to remember it was already there with nothing calling it.
+
+        Opt-in rather than automatic: what somebody has today is often not what
+        they usually have, and silently learning "2 eggs" from one Tuesday would
+        make every later suggestion slightly wrong.
+      */}
+      {available.trim().length > 0 && (
+        <label className="choice-inline">
+          <input
+            type="checkbox"
+            checked={remember}
+            onChange={(event) => setRemember(event.target.checked)}
+          />
+          <span>This is usually what I have</span>
+        </label>
+      )}
+
       <button type="button" className="primary" onClick={() => void ask()} disabled={busy}>
         {busy ? 'Thinking…' : 'Tell me'}
       </button>
+
+      {remembered && <p className="muted">Saved. I will assume these unless you say otherwise.</p>}
 
       {answer && (
         <div className="answer" role="status" aria-live="polite">
