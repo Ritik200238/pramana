@@ -177,8 +177,17 @@ function fakeModel(record: Harness['modelCalls'], state: { truncate: boolean }) 
   }
 }
 
-export async function startHarness(): Promise<Harness> {
-  for (const [key, value] of Object.entries(TEST_ENV)) process.env[key] = value
+/**
+ * `env` overrides TEST_ENV for one harness.
+ *
+ * The defaults describe a development machine, which is the right thing for
+ * almost every test and exactly wrong for the few that are about what a
+ * production build does differently — a test that set NODE_ENV itself had it
+ * overwritten here a line later, and passed or failed for reasons that had
+ * nothing to do with the code under test.
+ */
+export async function startHarness(env: Record<string, string> = {}): Promise<Harness> {
+  for (const [key, value] of Object.entries({ ...TEST_ENV, ...env })) process.env[key] = value
 
   const client = await PGlite.create()
   await migrate(client)

@@ -11,6 +11,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
+import { startHarness } from './helpers/e2e.ts'
 import {
   AuthError,
   OTP_MAX_ATTEMPTS,
@@ -206,4 +207,53 @@ test('the dev code escape hatch is gated on the server, not the request', () => 
   const source = code(readFileSync(join(SRC, 'routes', 'auth.ts'), 'utf8'))
   assert.match(source, /exposeCodeForDevelopment: deps\.isDevelopment/)
   assert.doesNotMatch(source, /exposeCodeForDevelopment:\s*(body|request)/, 'never client-controlled')
+})
+
+test('in production the sign-in code never comes back in the response', async () => {
+  /*
+   * The gate above is read from the source, which proves the wiring and not the
+   * behaviour. This is the one that would matter: a build where NODE_ENV is not
+   * development must hand back nothing an attacker could sign in with.
+   *
+   * The failure it guards against is total. Anyone who can guess a phone number
+   * gets the code for it, and the whole point of a one-time code is that only
+   * the person holding the phone has it.
+   */
+  const previous = process.env.NODE_ENV
+
+  try {
+    const harness = await startHarness({ NODE_ENV: 'production' })
+
+    try {
+      const response = await harness.app.inject({
+        method: 'POST',
+        url: '/auth/request-code',
+        payload: { phone: '+919876500099' },
+      })
+
+      assert.equal(response.statusCode, 200)
+
+      const body = response.json() as Record<string, unknown>
+      assert.equal(body.devCode, undefined, 'the code must never reach the client in production')
+
+      // And it really was sent, so this is not passing because nothing happened.
+      assert.equal(harness.sentCodes.length, 1)
+      const sent = harness.sentCodes[0]!.code
+      assert.ok(sent.length >= 4)
+
+      // The strong form: the code appears nowhere in the response at all, under
+      // any key. A rename would slip past a check for `devCode` alone.
+      assert.ok(
+        !JSON.stringify(body).includes(sent),
+        `the response contained the code itself: ${JSON.stringify(body)}`,
+      )
+    } finally {
+      await harness.close()
+    }
+  } finally {
+    // Restored explicitly: the harness writes to the real process env, so a
+    // later test in the same run would otherwise inherit production.
+    if (previous === undefined) delete process.env.NODE_ENV
+    else process.env.NODE_ENV = previous
+  }
 })
