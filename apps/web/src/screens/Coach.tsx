@@ -14,9 +14,10 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { ApiError, api, isBlocked, type StreakState } from '../lib/api.ts'
+import { LabReport } from '../components/LabReport.tsx'
 import { Blocked } from '../components/Blocked.tsx'
 
-type Panel = 'eat' | 'today' | 'week' | 'ask'
+type Panel = 'eat' | 'today' | 'week' | 'ask' | 'report'
 
 export function Coach() {
   const [panel, setPanel] = useState<Panel>('eat')
@@ -63,6 +64,10 @@ export function Coach() {
             ['today', 'Today'],
             ['week', 'This week'],
             ['ask', 'Ask'],
+            // Last, not first: most days there is no report to add. It being
+            // here at all is the point — the route, the pipeline and its tests
+            // existed while nothing rendered them, so the feature did not exist.
+            ['report', 'Reports'],
           ] as const
         ).map(([key, label]) => (
           <button
@@ -81,6 +86,7 @@ export function Coach() {
       {panel === 'today' && <DayLine />}
       {panel === 'week' && <WeekReview />}
       {panel === 'ask' && <AskData onBlocked={setBlocked} />}
+      {panel === 'report' && <LabReport />}
     </section>
   )
 }

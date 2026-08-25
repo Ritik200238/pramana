@@ -1498,3 +1498,79 @@ body {
   font-size: 1.05rem;
   letter-spacing: 0.01em;
 }
+
+/* Blood reports — see components/LabReport.tsx. A marker outside its range is
+   marked clearly and calmly; red panic on a health screen is how people stop
+   opening an app that has something they need to see. */
+.report-summary {
+  font-size: 1.05rem;
+  line-height: 1.5;
+}
+
+.markers {
+  margin: 1rem 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.marker {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.15rem 0.75rem;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--line, rgba(0, 0, 0, 0.12));
+  border-left-width: 3px;
+  border-radius: 0.4rem;
+}
+
+.marker-high,
+.marker-low {
+  /* Amber, not red. It means "look at this", not "something is wrong with you". */
+  border-left-color: #b8860b;
+}
+
+.marker-normal {
+  border-left-color: rgba(0, 0, 0, 0.12);
+}
+
+.marker-name {
+  font-weight: 600;
+}
+
+.marker-value {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.marker-flag,
+.marker-range {
+  grid-column: 1 / -1;
+  font-size: 0.8rem;
+  opacity: 0.7;
+}
+
+.report-disclaimer {
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--line, rgba(0, 0, 0, 0.12));
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.marker-history {
+  margin-top: 1.5rem;
+}
+
+.marker-line {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  margin: 0.35rem 0;
+}
+
+.marker-trend {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.8;
+}
