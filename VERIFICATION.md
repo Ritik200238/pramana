@@ -1421,6 +1421,62 @@ were fixed this session.
 
 ---
 
+## Can the model actually read Indian food — measured
+
+The first thing listed as unverified, and the one the cost case rests on. Run
+against the live provider on 0G Compute with the product's own prompt and JSON
+schema, on six meals a real user here would log.
+
+**Model:** `qwen/qwen2.5-omni-7b`, TEE-attested, provider
+`0xa48f01287233509FD694a22Bf840225062E67836`. It is the only chat model the
+broker marketplace currently lists — the other entry is an image *editing*
+model. The `qwen3-vl-30b` the cost table names is a Router model and is not
+reachable on this path; it has not been tested here.
+
+**Input was text, not photographs.** These are meal descriptions, not plates.
+Vision is the harder half and is still untested — see below.
+
+| | |
+|---|---|
+| Schema-valid replies | 6/6 |
+| Items identified | 18/19 — dal, sabzi, roti, rice, curd, salad, masala dosa, sambar, coconut chutney, idli, vada, paneer butter masala, butter naan, rajma, chawal. Missed `dahi` once |
+| Gave a **range** rather than a number (R1) | **2/6 meals** |
+| Flagged an **unknown** for the planner (R2) | **1/6 meals** |
+| Honoured a stated quantity ("2 roti") | 4/5 |
+| Confidence spread | avg 0.90, min 0.90, max 0.90 — **one distinct value across every item** |
+| Latency | ~8.8 s per meal |
+
+**What this says.** The product's thesis is right and the evidence is its own
+model: it knows *what* the food is and cannot tell *how much*. What the thesis
+did not anticipate is that it also will not say so. Asked plainly to give a range
+and to score confidence honestly, it returns a single committed amount at a flat
+0.9 — the confident wrong number the whole product is built to avoid.
+
+Three of the six rules depend on the model volunteering that uncertainty:
+
+- **R1, never guess an amount.** Four meals of six came back with
+  `unitsLow === unitsHigh`.
+- **R2, ask at most two questions.** The planner only ever sees unknowns the
+  model raises. Five meals of six raised none, so nothing is asked — and the app
+  silently accepts the invented amount.
+- **R3, every number carries its confidence.** One value for everything makes
+  the badge meaningless: nothing can ever be rougher than anything else.
+
+That chain is what produced the defect fixed in `bcc190b`: no questions asked
+made "everything significant was answered" vacuously true, and a meal nobody was
+ever asked about came out labelled 🟡 *"You told us the amounts that mattered."*
+
+**What it does not yet say.** Whether a 30B vision model on the Router behaves
+better, whether photographs are worse than text — near certainly — and what any
+of it costs per user. The honest current position is that the deterministic layer
+cannot rely on this model to surface its own uncertainty, and that either a
+better model or a deterministic source of portion questions is required before
+the two-question promise is real. **NOT VERIFIED** beyond what is in the table.
+
+**Reproducing it:** `npm run test:compute -w @ogt/og` runs the live path. The
+per-meal measurement above was a throwaway script over `readMealText`; the
+numbers are from the run recorded here, not from a stored fixture.
+
 ## Known gaps, not yet closed
 
 

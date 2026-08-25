@@ -228,7 +228,7 @@ The safety layer is plain code, not prompt text. It is not persuadable, and a te
 
 Stated plainly, because the alternative is a claim we cannot support:
 
-1. **Whether these models can read an Indian thali or lab report accurately.** The cost case rests on it. Untested.
+1. **Whether these models can read an Indian thali.** Partly answered, and not in our favour. Measured live on 0G Compute: the model identifies 18 of 19 Indian items correctly and will not admit uncertainty about any of them — one confidence value across every item, a committed amount rather than a range on four meals of six, and no unknowns at all on five of six. It knows what the food is and cannot tell how much, which is the thesis; it also will not say so, which the thesis did not anticipate. Photographs and the 30B model remain untested. See `VERIFICATION.md`.
 2. **Whether two questions read as trust or as friction.** The thesis rests on it. Only measurable with real users.
 3. **Whether question count actually decays in practice.** Instrumented, not yet observed.
 4. **Whether Indians will pay ₹199–299** for this.
