@@ -72,7 +72,21 @@ test('the trust model is stated where somebody decides whether to believe it', (
   // shows the receipts.
   assert.match(you, /trust-note/, 'the proof screen must carry the explanation')
   assert.match(you, /not the signature|not a proof you can re-run|signature itself/i)
-  assert.match(you, /we currently hold/i, 'and must not omit that custody is ours today')
+  /*
+   * Matched on substance rather than on one phrasing. The original required the
+   * exact words "we currently hold", which meant an honest rewording failed
+   * while an omission of the consequence would have passed — so this now
+   * requires both halves: that we hold the key, and what that means.
+   */
+  assert.match(you, /key we (currently )?hold/i, 'must not omit that custody is ours by default')
+  // Whitespace-tolerant: the sentence wraps across lines in JSX, so matching a
+  // single space would fail on a reflow that changed nothing a reader sees.
+  assert.match(you, /we\s+can read them/i, 'and must say plainly what that means')
+
+  // And must not describe self-custody as something still to come. It shipped;
+  // this sentence was left saying otherwise for a while, on the one screen
+  // where being out of date is the same as being untrue.
+  assert.doesNotMatch(you, /next thing to change|coming soon/i)
 })
 
 test('an unverified state is never described as verified', () => {
