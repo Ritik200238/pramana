@@ -60,6 +60,26 @@ The product previously claimed "Nobody — including us — could read them". Th
 was false twice: the Router relays the plaintext, and records are encrypted to a
 key we hold. Four tests now fail if that sentence returns.
 
+### The pipeline, end to end, on the real network
+
+`npm run test:pipeline -w @ogt/api` runs the sequence the product performs
+rather than its parts: a person with one logged food and a weight becomes an
+encrypted snapshot on 0G Storage, anchored on 0G Chain by the anchor worker, and
+a coach minted by the coach worker — then the record is decrypted back with the
+user's own derived key.
+
+| Step | Result |
+|---|---|
+| Snapshot | 497 bytes, encrypted, root `0x41574138…e349579` |
+| Anchor | tx `0xd68b35dc…7b9f19c`, index 0 |
+| Coach | token 6, learned count 1 |
+| Read back | decrypts with the user's key |
+
+This matters more than the individual checks above it. Almost every defect found
+in this repository lived in a handoff rather than in a part — a worker nothing
+called, a column nothing wrote, a list drifted from the routes it named — and
+each piece passing its own test said nothing about whether they connect.
+
 ### The four 0G bindings, and whether each does work
 
 The product was meant to bind to 0G four ways. Two of them were, until this
