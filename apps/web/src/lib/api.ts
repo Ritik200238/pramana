@@ -398,20 +398,93 @@ export function clearToken(): void {
   }
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+/**
+ * How long to wait before deciding the network is not going to answer.
+ *
+ * `fetch` has no timeout of its own. A request that is refused rejects at once,
+ * which the caller handles — but a request that is *accepted and never answered*
+ * hangs forever, and that is the ordinary case on a phone: a dead cell, a train
+ * tunnel, a cafe portal that completes the TCP handshake and then swallows
+ * everything.
+ *
+ * Without this the app booted to a spinner and stayed there. Every branch below
+ * that decides what a failure means — including the one that opens the app on
+ * the last known session so a meal can still be queued underground — is reached
+ * by catching a rejection, and none of it ran, because nothing ever rejected.
+ */
+/*
+ * The default is the generous one, and that is deliberate.
+ *
+ * Most of this API ends up at a model somewhere behind a service, and which
+ * routes those are is not visible from here. A list of "the slow ones" kept on
+ * this side would be a copy of something that lives in another package — the
+ * kind of mirror that is correct the day it is written and wrong the first time
+ * somebody adds an endpoint, and whose failure is a working feature timing out
+ * for a real user.
+ *
+ * So slow is the default and fast is opt-in, named call by named call, below.
+ * Getting it wrong in that direction means a hang is caught late. Getting it
+ * wrong the other way breaks a feature that works.
+ */
+const DEFAULT_TIMEOUT_MS = 45_000
+
+/**
+ * For the handful of reads that must feel immediate, and that never touch a
+ * model: who am I, what did I eat today, what do I usually eat.
+ *
+ * The first of these is the one that matters most. It runs before the app can
+ * render anything at all, so its timeout is the difference between an app that
+ * tells you it cannot reach the network and an app that shows a spinner until
+ * you close it.
+ */
+const FAST_TIMEOUT_MS = 12_000
+
+async function request<T>(
+  path: string,
+  init?: RequestInit,
+  timeoutMs: number = DEFAULT_TIMEOUT_MS,
+): Promise<T> {
   const token = readToken()
 
-  const response = await fetch(`${BASE}${path}`, {
-    ...init,
-    // Send the session cookie; the bearer header is the fallback for clients
-    // where a cookie is unavailable.
-    credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(init?.headers ?? {}),
-    },
-  })
+  /*
+   * An AbortController rather than `AbortSignal.timeout`, which Safari only
+   * gained in 16, and composed by hand rather than with `AbortSignal.any`,
+   * which is newer still. This has to work on the phones people actually have.
+   */
+  const controller = new AbortController()
+  const expired = setTimeout(() => controller.abort(), timeoutMs)
+
+  let response: Response
+  try {
+    response = await fetch(`${BASE}${path}`, {
+      ...init,
+      signal: controller.signal,
+      // Send the session cookie; the bearer header is the fallback for clients
+      // where a cookie is unavailable.
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(init?.headers ?? {}),
+      },
+    })
+  } catch (error) {
+    /*
+     * Reported as a network failure rather than an abort, because that is what
+     * it is to the person holding the phone, and because `isAuthFailure` must
+     * stay false here: a timeout means "we could not ask", never "you are
+     * signed out". Signing somebody out because a tunnel ate one request would
+     * lose them the meal in front of them.
+     */
+    if (controller.signal.aborted) {
+      const timedOut = new ApiError('The network is not responding.', 0, 'timeout')
+      timedOut.humanMessage = 'We could not reach the server. Check your connection and try again.'
+      throw timedOut
+    }
+    throw error
+  } finally {
+    clearTimeout(expired)
+  }
 
   if (response.status === 401) {
     clearToken()
@@ -485,7 +558,7 @@ export const api = {
   },
 
   me() {
-    return request<Me>('/auth/me')
+    return request<Me>('/auth/me', undefined, FAST_TIMEOUT_MS)
   },
 
   async signOut() {
@@ -532,11 +605,15 @@ export const api = {
   // ---- the day ----
 
   today() {
-    return request<DaySummary>(`/users/me/today?utcOffsetMinutes=${utcOffsetMinutes()}`)
+    return request<DaySummary>(
+      `/users/me/today?utcOffsetMinutes=${utcOffsetMinutes()}`,
+      undefined,
+      FAST_TIMEOUT_MS,
+    )
   },
 
   usuals() {
-    return request<{ usuals: Usual[] }>('/users/me/usuals')
+    return request<{ usuals: Usual[] }>('/users/me/usuals', undefined, FAST_TIMEOUT_MS)
   },
 
   repeatMeal(sourceMealId: string, idempotencyKey = crypto.randomUUID()) {
@@ -596,6 +673,8 @@ export const api = {
   history() {
     return request<{ messages: Array<{ role: string; content: string; createdAt: string }> }>(
       '/chat/history',
+      undefined,
+      FAST_TIMEOUT_MS,
     )
   },
 
@@ -626,7 +705,11 @@ export const api = {
   },
 
   streak() {
-    return request<StreakState>(`/users/me/streak?utcOffsetMinutes=${utcOffsetMinutes()}`)
+    return request<StreakState>(
+      `/users/me/streak?utcOffsetMinutes=${utcOffsetMinutes()}`,
+      undefined,
+      FAST_TIMEOUT_MS,
+    )
   },
 
   proactive() {
