@@ -12,7 +12,8 @@
   "scripts": {
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
-    "lint": "npm run lint --workspaces --if-present"
+    "lint": "npm run lint --workspaces --if-present",
+    "evidence": "node scripts/evidence.mjs"
   },
   "overrides": {
     "ws": "^8.20.2",
