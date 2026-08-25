@@ -15,6 +15,17 @@ export interface ConfidenceInput {
   fromBarcode: boolean
   /** Every unknown above the impact threshold was answered by the user. */
   allSignificantAnswered: boolean
+  /**
+   * The user actually settled at least one amount — answered a question now, or
+   * answered it before and had it skipped by R4.
+   *
+   * Without this, `allSignificantAnswered` is true of a meal where nothing was
+   * ever asked, and a model that declines to admit uncertainty gets a badge
+   * that says the person confirmed the amounts. Measured on the live provider:
+   * it returns committed quantities at a flat 0.9 and raises no unknowns, so
+   * this is the ordinary case rather than an edge one.
+   */
+  userSettledAnAmount: boolean
   /** Lowest per-item model confidence contributing to this total. */
   minItemConfidence: number
 }
@@ -24,7 +35,11 @@ export const ROUGH_CONFIDENCE_CEILING = 0.6
 
 export function classify(input: ConfidenceInput): Confidence {
   if (input.fromBarcode) return 'exact'
-  if (input.allSignificantAnswered && input.minItemConfidence >= ROUGH_CONFIDENCE_CEILING) {
+  if (
+    input.allSignificantAnswered &&
+    input.userSettledAnAmount &&
+    input.minItemConfidence >= ROUGH_CONFIDENCE_CEILING
+  ) {
     return 'confirmed'
   }
   return 'rough'

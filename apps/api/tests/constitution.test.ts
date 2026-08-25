@@ -117,6 +117,7 @@ test('R1 — an amount we were not told is never presented as one we were', () =
   const unanswered = classify({
     fromBarcode: false,
     allSignificantAnswered: false,
+    userSettledAnAmount: false,
     minItemConfidence: 0.95,
   })
   assert.equal(unanswered, 'rough', 'an unanswered swing must never read as confirmed')
@@ -126,6 +127,7 @@ test('R1 — an amount we were not told is never presented as one we were', () =
   const answered = classify({
     fromBarcode: false,
     allSignificantAnswered: true,
+    userSettledAnAmount: true,
     minItemConfidence: 0.95,
   })
   assert.equal(answered, 'confirmed')

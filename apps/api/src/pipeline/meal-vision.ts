@@ -21,7 +21,7 @@ import { complete, stripFences, type Usage } from '@ogt/og'
 import type { AttestationReceipt } from '@ogt/og'
 import type { Unknown, UnknownKind } from '@ogt/core'
 
-const SYSTEM_PROMPT = `You read photographs of food and report what is on the plate. You know Indian home, mess, tiffin and restaurant food well.
+export const SYSTEM_PROMPT = `You read photographs of food and report what is on the plate. You know Indian home, mess, tiffin and restaurant food well.
 
 Report every distinct item separately. A thali or a plate usually holds several — count them individually, never as one dish.
 
@@ -73,7 +73,7 @@ export const VisionResultSchema = z.object({
 export type VisionItem = z.infer<typeof VisionItemSchema>
 export type VisionResult = z.infer<typeof VisionResultSchema>
 
-const JSON_SCHEMA = {
+export const JSON_SCHEMA = {
   name: 'meal_reading',
   schema: {
     type: 'object',

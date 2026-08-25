@@ -288,3 +288,88 @@ test('drafting is deterministic', () => {
   assert.deepEqual(a.plan.ask.map((q) => q.text), b.plan.ask.map((q) => q.text))
   assert.deepEqual(a.totals, b.totals)
 })
+
+test('R3 — a model that volunteers no unknowns does not get a confirmed badge', () => {
+  /*
+   * Measured against the live provider on 0G Compute, not imagined.
+   * qwen2.5-omni-7b — the only chat model the marketplace currently offers —
+   * reads Indian food well and will not admit uncertainty about it. On six real
+   * meals it returned committed amounts (unitsLow === unitsHigh) with a flat
+   * 0.9 confidence on every item and, on five of the six, no unknowns at all.
+   *
+   * Feed that through here and the vacuous cases line up: no questions were
+   * asked, so "every asked question was answered" is true of an empty set;
+   * nothing was unresolved, because nothing was ever raised; and 0.9 clears the
+   * ceiling. The meal came out `confirmed` — 🟡 "You told us the amounts that
+   * mattered" — when the person was never asked anything and the model guessed.
+   *
+   * That is the exact failure this product exists to prevent, arrived at
+   * through the product's own rules.
+   */
+  const guessed: VisionResult = {
+    notFood: false,
+    items: [
+      {
+        id: 'dal',
+        name: 'Dal',
+        unit: 'cup',
+        unitsLow: 1,
+        unitsHigh: 1,
+        gramsPerUnit: 150,
+        kcalPer100g: 180,
+        proteinPer100g: 10,
+        carbPer100g: 18,
+        fatPer100g: 4,
+        confidence: 0.9,
+      },
+    ],
+    unknowns: [],
+  }
+
+  const draft = buildDraft(guessed, NONE)
+
+  assert.equal(draft.plan.ask.length, 0, 'nothing was asked, which is the setup')
+
+  const { mealConfidence } = classifyMeal(draft, [])
+  assert.equal(
+    mealConfidence,
+    'rough',
+    'an amount nobody confirmed must not wear the badge that says somebody did',
+  )
+})
+
+test('R4 — an amount they settled on an earlier day still counts as confirmed', () => {
+  /*
+   * The moat, stated as a test. Day one asks; day thirty asks nothing, because
+   * this person has already said how much dal they eat. The meal must still be
+   * confirmed — the amount is theirs, given once and remembered.
+   *
+   * This is the half the vacuous-confirmation fix could have broken. "Nothing
+   * was asked" is true both when the model never raised anything and when R4
+   * skipped a question already answered, and the two must not be treated alike:
+   * one is a guess nobody checked, the other is the product working as designed.
+   *
+   * Without this test the distinction was unguarded — deleting it from
+   * meal-log.ts left every suite green.
+   */
+  const meal = thali()
+  const dal = meal.items[0]!
+  const unknown = (meal.unknowns ?? []).find((u) => u.itemId === dal.id)
+  assert.ok(unknown, 'the fixture must raise an unknown for this to mean anything')
+
+  // Exactly what a returning user's food library holds.
+  const known = new Set(
+    (meal.unknowns ?? []).map((u) => {
+      const item = meal.items.find((i) => i.id === u.itemId)!
+      return knownKey(item.name, u.kind)
+    }),
+  )
+
+  const draft = buildDraft(meal, known)
+
+  assert.equal(draft.plan.ask.length, 0, 'R4 must ask them nothing')
+  assert.ok(draft.plan.settled.length > 0, 'but it must remember that they answered')
+
+  const { mealConfidence } = classifyMeal(draft, [])
+  assert.equal(mealConfidence, 'confirmed', 'an amount they gave once is still theirs')
+})

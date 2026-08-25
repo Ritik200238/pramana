@@ -233,10 +233,20 @@ export function classifyMeal(
   const allAskedAnswered = [...askedKeys].every((key) => answeredKeys.has(key))
   const noneUnresolved = draft.plan.unresolved.length === 0
 
+  /*
+   * Somebody actually told us an amount — either now, or previously, which is
+   * why R4 skipped asking again. An empty question list satisfies
+   * `allAskedAnswered` on its own, so without this a model that never admits
+   * uncertainty produces a meal labelled as confirmed by a person who was
+   * never asked.
+   */
+  const userSettledAnAmount = answeredKeys.size > 0 || draft.plan.settled.length > 0
+
   const itemConfidences = draft.items.map((item) =>
     classify({
       fromBarcode,
       allSignificantAnswered: allAskedAnswered && noneUnresolved,
+      userSettledAnAmount,
       minItemConfidence: item.modelConfidence,
     }),
   )

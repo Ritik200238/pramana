@@ -62,6 +62,15 @@ export interface Plan {
   unresolved: Unknown[]
   /** Below threshold. Silently estimated; never shown as a question. */
   ignored: Unknown[]
+  /**
+   * Raised, worth asking, and not asked because this person already answered it
+   * once. R4 skips these; they are still amounts the user settled.
+   *
+   * Kept apart from the rest because "we never asked" and "we asked once and
+   * they told us" look identical from the question list and mean opposite
+   * things about how much the number can be trusted.
+   */
+  settled: Unknown[]
 }
 
 /** Stable key for "this user has already answered this". */
@@ -85,11 +94,16 @@ export function impactOf(u: Unknown, mealKcal: number, mealProteinG: number): nu
 
 export function planQuestions(input: PlanInput): Plan {
   const ignored: Unknown[] = []
+  const settled: Unknown[] = []
   const candidates: Question[] = []
 
   for (const unknown of input.unknowns) {
-    // R4 — already settled for this user. Never ask twice.
-    if (input.known.has(knownKey(unknown.itemName, unknown.kind))) continue
+    // R4 — already settled for this user. Never ask twice, but remember that
+    // they did answer it, because that is what makes the number theirs.
+    if (input.known.has(knownKey(unknown.itemName, unknown.kind))) {
+      settled.push(unknown)
+      continue
+    }
 
     const impact = impactOf(unknown, input.mealKcal, input.mealProteinG)
     if (impact < IMPACT_THRESHOLD) {
@@ -107,6 +121,7 @@ export function planQuestions(input: PlanInput): Plan {
     ask: candidates.slice(0, MAX_QUESTIONS),
     unresolved: candidates.slice(MAX_QUESTIONS).map((q) => q.unknown),
     ignored,
+    settled,
   }
 }
 
