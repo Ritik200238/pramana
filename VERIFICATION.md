@@ -356,71 +356,67 @@ known vite/vitest advisories; see the Known Gaps section.
 
 These are the honest gaps. Each says what is missing and what would close it.
 
-### Inference against the live Router
-
-**Still NOT VERIFIED, but no longer for the reason recorded here before.**
-
-This said inference was blocked on an `sk-` key that only a person can create at
-pc.0g.ai. That was wrong, and wrong in the direction that matters: it made a gap
-look like somebody else's problem.
-
-0G documents a second path, and it needs no key at all. The broker discovers
-providers from the on-chain marketplace, signs each request with the wallet's
-own key, and settles the fee on 0G Chain. Verified live, today:
-
-| | |
-|---|---|
-| Providers listed | 2, both TEE-attested |
-| Chat provider | `0xa48f01287233509FD694a22Bf840225062E67836` |
-| Model | `qwen/qwen2.5-omni-7b` — text, image and audio in one model |
-| Attestation | `TeeML` / dstack, [public verifier](https://github.com/Dstack-TEE/dstack/releases/tag/verifier-v0.5.8) |
-| Price | 1.04e12 neuron in, 4.18e12 neuron out |
-| Ledger | created on chain, tx `0x0cd5e5ac01cc22765fcf204cce437c5ef1f6dd2d2be7992f9ad3d4bbdda2b2ce` |
-| Provider acknowledged | yes |
-
-What remains is **funding, not access**. The provider requires 1 0G locked in its
-sub-account before it answers:
-
-```
-insufficient balance: your locked balance is 0.010000 0G, but the required
-minimum is 1.000000 0G (breakdown: minimum reserve 1.000000 0G + unsettled
-fees 0.000000 0G + current request fee 0.000000 0G)
-```
-
-The wallet holds ~0.35 0G with 0.1 0G in the ledger. **Roughly 0.7 0G more — two
-faucet claims — and the call runs.**
-
-Checked against both providers rather than assumed from one: the image-editing
-provider (`0x4b2a…4389`, sub-account funded with 0.05 0G and acknowledged, tx
-`0x2dbfb27b431f0effeb9d19e46460668e5b9e2d7fc9374ff35674ea6472572589`) returns
-the identical message. The 1 0G reserve is a floor across the marketplace, not
-one provider's setting, so there is no cheaper provider to route around it and
-no partial verification available at this balance. Retrieving every sub-account
-back into the ledger reaches roughly 0.50 0G, still short.
+### Inference on 0G Compute — VERIFIED LIVE
 
     npm run test:compute -w @ogt/og
 
-Discovery already passes live. The inference case skips with the shortfall
-printed, and asserts what the product depends on rather than that a string came
-back: that the model holds a JSON contract, that the numbers are numbers, that
-the answer is plausible for dal and two rotis, and that the fee settled with no
-error.
+Paid from our own wallet. **No API key exists anywhere in this path.** The broker
+discovers providers from the on-chain marketplace, signs each request with the
+wallet's key, and reports usage for settlement.
 
-The Router path (`sk-` key) remains supported and is still the production
-default, for a reason worth stating plainly rather than burying.
+| | |
+|---|---|
+| Provider | `0xa48f01287233509FD694a22Bf840225062E67836` |
+| Model | `qwen/qwen2.5-omni-7b` — text, image and audio in one model |
+| Attestation | `TeeML` / dstack, `teeVerified: true` on chain, [verifier](https://github.com/Dstack-TEE/dstack/releases/tag/verifier-v0.5.8) |
+| Price, from the chain | 1.04e12 neuron/token in, 4.18e12 out |
+| Ledger | `0x0cd5e5ac…`, then deposit `0x65fb9504…`, 1.5 0G locked `0x3dc20547…` |
+
+Three cases pass, the third being the one that matters — the product's own
+`complete()`, not a hand-rolled request:
+
+```
+ok 1 - the marketplace lists providers, and the ones we would use are attested
+ok 2 - a meal is read by a TEE-attested provider and the fee settles on chain
+ok 3 - the product's own extraction path runs on 0G Compute
+```
+
+Measured: "one katori rajma, two rotis, half katori rice" → `{"kcal":500,
+"protein_g":20,"carb_g":80,"fat_g":10}` in **5.6 s**, 49 prompt + 46 completion
+tokens, 0 failovers. A second: two idlis with sambar and chutney → `{"kcal":400,
+"protein_g":15}` in 4.1 s. Plausible for the cuisine, and valid JSON both times.
+
+Two claims made on the way here were too convenient, and are recorded because
+the correction is the useful part.
+
+**"Everything already built on top works unchanged" was false.** `complete`
+resolved models from the task chains, which name Router models a direct provider
+has never heard of. Every attempt would have failed in a way that looks like an
+outage. The chain is now overridable and the broker path supplies its own,
+priced from the on-chain record.
+
+**"Settles the fee on chain" per request was too strong.** Measured: the locked
+balance does not move on each call — usage is reported and the provider settles
+later. The per-call on-chain deduction is **NOT VERIFIED**; what is verified is
+that reporting succeeds without error.
+
+Attestation is handled honestly rather than pretended. A direct provider returns
+no `x_0g_trace`, so provenance comes from the marketplace record on chain —
+established when the provider is chosen, not per response. `costNeuron` stays
+`null` for the same reason: there is no authoritative charge to read, and
+filling it with our own arithmetic would turn an estimate into something that
+reads as accounting.
+
+The Router path (`sk-` key) remains supported and is still the simpler
+operational default.
 
 **Adopting the wallet path costs dependency surface.** Adding
 `@0glabs/0g-serving-broker` as a production dependency took this repository from
-**0 production advisories to 20** (18 low, 2 high) — `adm-zip`, `circomlibjs`
-and `crypto-browserify` among them, plus the whole ethers v5 `@ethersproject/*`
-tree and its vulnerable `elliptic`.
-
-The adapter was written against a structural interface and imports nothing from
-that SDK, so the SDK is a devDependency and production is back to **0**. An
-operator who chooses the wallet path installs it deliberately and takes those 20
-advisories on knowingly. That is the honest trade: the broker is the more
-self-contained integration, and today it is the more expensive one to run in
-production.
+0 production advisories to 20 (18 low, 2 high) — `adm-zip`, `circomlibjs`,
+`crypto-browserify`, and the ethers v5 tree with its vulnerable `elliptic`. The
+adapter imports nothing from that SDK, so it is a devDependency and production
+is back to **0**. An operator choosing this path takes those advisories on
+knowingly.
 
 
 ### Contracts on the live network — CLOSED
