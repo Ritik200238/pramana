@@ -31,6 +31,7 @@ export const ANCHOR_ABI = [
   'function anchorSnapshotFor(address owner, bytes32[] rootHashes, uint32 schemaVersion, uint256 nonce, uint256 deadline, bytes signature) returns (uint256)',
   'function nonceUsed(address owner, uint256 nonce) view returns (bool)',
   'function snapshotCount(address owner) view returns (uint256)',
+  'function snapshotAt(address owner, uint256 index) view returns (bytes32[] rootHashes, uint32 schemaVersion, uint64 createdAt)',
   'event SnapshotAnchored(address indexed owner, uint256 indexed index, bytes32 indexed firstRootHash, uint256 fragmentCount, uint32 schemaVersion)',
 ] as const
 
@@ -212,6 +213,33 @@ export class AnchorClient {
     this.chainId = config.chainId
     this.contractAddress = config.contractAddress
     this.contract = new ethers.Contract(config.contractAddress, ANCHOR_ABI, relayer)
+  }
+
+  /**
+   * Read one anchored snapshot back off the chain.
+   *
+   * This is the half that makes anchoring mean anything. Writing a root hash to
+   * a public chain proves nothing on its own — somebody has to compare it
+   * against what is being served, and until this existed nobody did. Our own
+   * restore path read root hashes out of our own database and verified the
+   * downloaded bytes against those, which catches a storage node returning
+   * altered ciphertext and catches nothing at all about the row itself.
+   */
+  async snapshotAt(
+    owner: string,
+    index: number,
+  ): Promise<{ rootHashes: string[]; schemaVersion: number; createdAt: number }> {
+    const result = (await this.contract['snapshotAt']!(owner, index)) as [
+      string[],
+      bigint,
+      bigint,
+    ]
+
+    return {
+      rootHashes: [...result[0]],
+      schemaVersion: Number(result[1]),
+      createdAt: Number(result[2]),
+    }
   }
 
   /** Has this nonce already been spent? Cheaper than a reverted transaction. */

@@ -16,8 +16,9 @@ import { z } from 'zod'
 import { desc, eq, inArray } from 'drizzle-orm'
 import type { Database } from '../db/index.ts'
 import { currentUserId } from '../plugins/auth.ts'
-import { deriveOwnerAccount, publicKeyFor } from '@ogt/og'
+import { deriveOwnerAccount, publicKeyFor, type AnchorClient } from '@ogt/og'
 import { ensureRecordKey } from '../services/record-key.ts'
+import { checkAnchor, type AnchorCheck } from '../services/anchor-check.ts'
 import {
   households,
   safetyEvents,
@@ -38,6 +39,15 @@ import {
 
 export interface ExportRouteDeps {
   db: Database
+  /**
+   * Reads anchors back off the chain, so the export can say whether our rows
+   * agree with what was anchored.
+   *
+   * Optional: a deployment without anchoring configured says "unavailable"
+   * rather than pretending, which is the honest answer and not the same as
+   * "verified".
+   */
+  anchorClient?: AnchorClient | undefined
   /**
    * Derives the key a person's records are encrypted to.
    *
@@ -114,6 +124,13 @@ export async function registerExportRoutes(
     // Everything means everything. Each table added to the product has to be
     // added here too, or "export everything, free, forever" quietly becomes
     // false — which is exactly the walled-garden behaviour users called out.
+    /*
+     * The account that owns these records on chain. Exported so the comparison
+     * above can be repeated by anybody, against a public RPC, with no part of
+     * this company involved.
+     */
+    const anchorOwner = deps.masterSeed ? deriveOwnerAccount(deps.masterSeed, userId).address : ''
+
     const [weights, facts, chat, foods, known, snaps, markers, reports, streak, receipts, safety, household] =
       await Promise.all([
         deps.db.select().from(weightLogs).where(eq(weightLogs.userId, userId)),
@@ -131,6 +148,27 @@ export async function registerExportRoutes(
           ? deps.db.select().from(households).where(eq(households.id, user.householdId))
           : Promise.resolve([]),
       ])
+
+    /*
+     * Compare our rows against the chain, before handing them over.
+     *
+     * A Merkle proof on download verifies the bytes against whichever root hash
+     * it was given — ours. It says nothing about whether that row still says
+     * what it said when it was anchored. This is the check that does, and an
+     * export is where it matters most: it is the copy somebody keeps.
+     */
+    const anchorChecks: AnchorCheck[] = deps.anchorClient
+      ? await Promise.all(
+          snaps.map((snap) =>
+            checkAnchor({
+              client: deps.anchorClient!,
+              owner: anchorOwner,
+              anchorIndex: snap.anchorIndex,
+              rootHashes: snap.rootHashes,
+            }),
+          ),
+        )
+      : snaps.map(() => ({ status: 'unavailable', reason: 'anchoring not configured' }) as const)
 
     const payload = {
       exportedAt: new Date().toISOString(),
@@ -196,11 +234,25 @@ export async function registerExportRoutes(
        *
        * Ask for `?includeRecordKey=true` and it becomes true.
        */
-      ogStorage: snaps.map((snap) => ({
+      /** Who owns the anchors above, for anybody re-running the check. */
+      anchorOwner,
+      ogStorage: snaps.map((snap, position) => ({
         rootHashes: snap.rootHashes,
         txHashes: snap.txHashes,
         schemaVersion: snap.schemaVersion,
         anchorTxHash: snap.anchorTxHash,
+        /*
+         * The index, so this can be checked without us.
+         *
+         * `snapshotAt(owner, index)` on HealthRecordAnchor returns the root
+         * hashes the chain holds. With the owner address below, anybody can
+         * run that against a public RPC and compare it to the list above —
+         * which is the whole point of anchoring and was not previously
+         * possible from what the export contained.
+         */
+        anchorIndex: snap.anchorIndex,
+        /** What that comparison says when we run it ourselves. */
+        anchorVerification: anchorChecks[position] ?? { status: 'unavailable', reason: 'not checked' },
         createdAt: snap.createdAt,
       })),
       ...(recordAccount

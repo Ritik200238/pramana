@@ -391,6 +391,48 @@ hides. Records written *before* taking custody stay under the key we held; this
 applies going forward. And there is no reset: lose the words and those records
 stay closed.
 
+### The anchor is now read back, not just written
+
+    npm test -w @ogt/api    # tests/anchor-check.test.ts
+
+Anchoring was verified live months of work ago: a root hash goes on 0G Chain and
+the transaction is on the explorer. What was never true is that anybody compared
+it to anything.
+
+The restore path read root hashes out of our own `snapshots` table and had 0G
+Storage verify the downloaded bytes against them. That catches a storage node
+returning altered ciphertext, which genuinely matters here — the payload is
+counter-mode encrypted with no authentication tag, so altered ciphertext
+decrypts to altered plaintext rather than failing. **What it cannot catch is the
+row.** Change `root_hashes` in our database and the Merkle proof still passes,
+because it verifies against whichever hash it was handed.
+
+`snapshotAt` and `latestSnapshot` existed on the contract and were **not even
+implemented on the client**. Nothing anywhere compared the two.
+
+Closed: `checkAnchor` reads the anchor back and compares, and the export runs it
+on every snapshot before handing the file over — an export is the copy somebody
+keeps, so it is where this matters most. The export now also carries the
+`anchorIndex` and the owner address, which it did not before, so the comparison
+can be repeated by anybody against a public RPC with no part of this company
+involved.
+
+| Property | Proved by |
+|---|---|
+| A matching row verifies | Test |
+| A disagreeing row is a mismatch, with both sides reported | Test |
+| Casing and ordering are not tampering | Test |
+| An appended hash does not verify | Test — the direction an attacker would pick |
+| A dropped hash does not verify | Test |
+| An unanchored snapshot is not an accusation | Test |
+| An unreachable chain is unknown, never verified | Test |
+| The export actually runs it, and the server supplies a client | Test, against the source |
+
+Checked by breaking it four ways. One of them found a hole in the **tests**
+rather than the code: removing the length check still failed the "chain has
+more" case, and would have silently verified a row with an **extra** root hash
+appended — the direction that matters. Both directions are covered now.
+
 ### The offline queue, against storage and a server that misbehave
 
     npm test -w @ogt/web    # tests/queue-adversarial.test.ts
@@ -1005,7 +1047,7 @@ Nothing here rests on being believed.
 
 ```bash
 npm install
-npm test --workspaces                      # 512 tests: 53 core, 91 og, 237 api, 131 web
+npm test --workspaces                      # 520 tests: 53 core, 91 og, 245 api, 131 web
 npm run typecheck --workspaces             # four packages, strict
 npm audit --omit=dev                       # 0 production vulnerabilities
 cd packages/contracts && forge test        # 116 tests

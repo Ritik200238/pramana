@@ -194,7 +194,25 @@ export async function buildServer(overrides: ServerOverrides = {}) {
   await registerChatRoutes(app, { db, openai })
   await registerDayRoutes(app, { db })
   await registerCoachRoutes(app, { db, openai })
-  await registerExportRoutes(app, { db, masterSeed: config.OG_ANCHOR_MASTER_SEED })
+  await registerExportRoutes(app, {
+    db,
+    masterSeed: config.OG_ANCHOR_MASTER_SEED,
+    /*
+     * So an export can say whether our rows still agree with what was anchored.
+     * Absent when anchoring is not configured, and the export says so rather
+     * than reporting "verified" for a check nobody ran.
+     */
+    ...(config.OG_ANCHOR_ADDRESS
+      ? {
+          anchorClient: new AnchorClient({
+            rpcUrl: config.OG_RPC_URL_OVERRIDE ?? NETWORKS[config.OG_NETWORK].rpcUrl,
+            contractAddress: config.OG_ANCHOR_ADDRESS,
+            relayerPrivateKey: config.OG_STORAGE_PRIVATE_KEY,
+            chainId: NETWORKS[config.OG_NETWORK].chainId,
+          }),
+        }
+      : {}),
+  })
   await registerCustodyRoutes(app, {
     db,
     anchorAddress: config.OG_ANCHOR_ADDRESS,
