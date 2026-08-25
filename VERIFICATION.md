@@ -391,6 +391,41 @@ hides. Records written *before* taking custody stay under the key we held; this
 applies going forward. And there is no reset: lose the words and those records
 stay closed.
 
+### Accessibility, checked by axe rather than by eye
+
+    npm test -w @ogt/web    # tests/accessibility.test.tsx
+
+The screen tests already assert the things somebody thought to assert — a label
+here, an `aria-live` there. That is the weakness: they find what was remembered.
+axe applies the WCAG rules systematically, which is how something gets caught by
+other than the person who wrote it.
+
+It matters more here than in most products. The people most likely to be using a
+screen reader, a larger font, or voice control are disproportionately the people
+with a long-term condition to track — which is to say, the people this is for.
+
+**One real defect, on the two most important actions in the app.** The hidden
+file inputs behind "take a photo" and "photograph a report" are `sr-only`, which
+hides them visually and *not* from a screen reader — so both were unnamed file
+inputs sitting in the tab order of the primary action. Now labelled and taken
+out of the tab order, since the visible button is the real control and is
+properly named.
+
+All nine screens pass: SignIn, Onboarding, Today, Chat, Coach, MealFlow,
+LabReport, Remembered, Custody.
+
+Scoped to the rules a component in isolation can honestly be judged on —
+landmarks and page titles belong to a document, and failing them here would say
+nothing about the product while making the check easy to ignore. Contrast is not
+covered: jsdom has no layout, so it cannot be measured this way and is not
+claimed.
+
+**Mutation found a hole in the rule list.** Removing the progress ring's label
+failed nothing at first, because `image-alt` only covers `<img>` and the ring is
+a `div` with `role="img"` — the check was quietly ignoring the single most
+important number on the home screen. `role-img-alt` and four others are in the
+list now, and the same mutation fails.
+
 ### What a first visit costs, on metered data
 
     npm run build -w @ogt/web && npm test -w @ogt/web   # tests/bundle-budget.test.ts
@@ -1221,7 +1256,7 @@ Nothing here rests on being believed.
 
 ```bash
 npm install
-npm test --workspaces                      # 545 tests: 53 core, 91 og, 258 api, 143 web
+npm test --workspaces                      # 554 tests: 53 core, 91 og, 258 api, 152 web
 npm run typecheck --workspaces             # four packages, strict
 npm audit --omit=dev                       # 0 production vulnerabilities
 cd packages/contracts && forge test        # 116 tests

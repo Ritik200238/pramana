@@ -242,6 +242,17 @@ export function MealFlow({ onClose, onLogged }: MealFlowProps) {
             accept="image/*"
             capture="environment"
             className="sr-only"
+            /*
+              Labelled and taken out of the tab order.
+
+              `sr-only` hides it visually and not from a screen reader, so before
+              this it was an unnamed file input sitting in the tab order of the most
+              important action in the app. The visible button is the real control and
+              is properly named; this is here so that anybody who reaches the input
+              another way still knows what it is.
+            */
+            aria-label="What are you eating? Take or choose a photo of your plate."
+            tabIndex={-1}
             onChange={(event) => {
               const file = event.target.files?.[0]
               if (file) void onFile(file)
