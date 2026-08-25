@@ -12,7 +12,8 @@
     "db:migrate": "node --experimental-strip-types src/db/migrate.ts",
     "preflight": "node --experimental-strip-types src/preflight.ts",
     "test:pipeline": "node --test --experimental-strip-types tests/live/pipeline.test.ts",
-    "bench": "node scripts/bench.mjs"
+    "bench": "node scripts/bench.mjs",
+    "test:locks": "node --test --experimental-strip-types tests/live/lock-contention.test.ts"
   },
   "dependencies": {
     "@fastify/cors": "^10.0.1",
