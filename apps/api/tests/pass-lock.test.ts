@@ -19,6 +19,7 @@ import { join } from 'node:path'
 import { PGlite } from '@electric-sql/pglite'
 import { drizzle } from 'drizzle-orm/pglite'
 import { lockKey, postgresPassLock } from '../src/jobs/pass-lock.ts'
+import { createDb } from '../src/db/index.ts'
 import { startScheduler } from '../src/jobs/scheduler.ts'
 import * as schema from '../src/db/schema.ts'
 import type { Database } from '../src/db/index.ts'
@@ -186,4 +187,24 @@ test('a held lock stops the pass before it pays to upload anything', async () =>
   } finally {
     await client.close()
   }
+})
+
+test('a pool too small to spare a connection is refused at construction', () => {
+  /*
+   * The lock reserves a connection for the whole pass. A pool of one has
+   * nothing left to serve the pass, and the next query waits for a connection
+   * only the pass can give back — it does not error, it stops.
+   *
+   * Refused loudly at startup rather than discovered as a worker that quietly
+   * stopped running.
+   */
+  assert.throws(
+    () => createDb('postgres://user@localhost:5432/db', { max: 1 }),
+    /at least 2/,
+  )
+
+  // Two is enough: one reserved, one to work with.
+  const db = createDb('postgres://user@localhost:5432/db', { max: 2 })
+  assert.ok(db.sql)
+  void db.close()
 })

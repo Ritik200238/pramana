@@ -32,10 +32,19 @@ const URL = process.env['DATABASE_URL']
 const skip = URL ? false : 'set DATABASE_URL to a Postgres this test may connect to'
 
 test('a second instance is refused the lock the first is holding', { skip }, async () => {
-  // Two pools, because two instances are two processes. One pool with two
-  // connections would not prove the same thing.
-  const first = postgres(URL!, { max: 1, connect_timeout: 10 })
-  const second = postgres(URL!, { max: 1, connect_timeout: 10 })
+  /*
+   * Two pools, because two instances are two processes. One pool with two
+   * connections would not prove the same thing.
+   *
+   * `max` is 2 rather than 1 for a reason worth knowing: `reserve()` takes a
+   * connection out of the pool and holds it for the life of the lock, so a pool
+   * of one has nothing left to serve anything else and the next query on it
+   * waits forever. Production runs a pool of ten, which is why the worker does
+   * not deadlock on itself — but it is a real edge and it is the first thing
+   * this test hit.
+   */
+  const first = postgres(URL!, { max: 2, connect_timeout: 10 })
+  const second = postgres(URL!, { max: 2, connect_timeout: 10 })
 
   try {
     const lockA = postgresPassLock(first)
