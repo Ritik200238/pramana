@@ -391,6 +391,65 @@ hides. Records written *before* taking custody stay under the key we held; this
 applies going forward. And there is no reset: lose the words and those records
 stay closed.
 
+### The rate limiter, under a burst rather than a queue — a real defect
+
+    npm test -w @ogt/api    # tests/burst.test.ts, tests/counting-store.test.ts
+
+Every rate-limit test here sent requests one after another. Measured against the
+real endpoint, where the limit is six an hour:
+
+```
+sequential, eight requests  -> 200 200 200 200 200 429 429 429   correct
+concurrent, four requests   -> all allowed                        all read "4"
+concurrent, eight requests  -> all refused                        all read "8"
+```
+
+**The cause is in `@fastify/rate-limit`.** Its `LocalStore.incr` hands the
+callback the object it keeps in the LRU rather than a copy, and the plugin reads
+`result.current` after an `await` — so every request in the same tick reads
+whatever the counter finished at instead of where it was when that request
+arrived.
+
+The second line is the wrong direction. The third is worse, and it lands hardest
+on exactly the market this is built for: a whole carrier behind one NAT is how
+much of India reaches the internet, so eight people signing in at the same
+moment would all be turned away, including the six who were within the limit.
+And nobody floods an endpoint politely — the concurrent path was always the only
+one that mattered.
+
+Fixed with a store that returns a snapshot. Same algorithm as the library's,
+deliberately, so it stays a bug fix rather than a second implementation with its
+own opinions. The endpoint now allows exactly six under a burst of twenty, and
+sends exactly six texts.
+
+| Property | Proved by |
+|---|---|
+| A burst is limited exactly as a queue is | Test — 20 at once, 6 through |
+| No text is sent for a refused request | Test — the expensive half of that endpoint |
+| A refusal says when to come back | Test — `Retry-After` |
+| A single number is limited on its own | Test, against `otp_challenges` |
+| Two meals committed at once are two meals | Test |
+| Each caller is told its own count | Store test — 1 through 8, not 8 eight times |
+| A window ends, so a limit is not a ban | Store test |
+| Keys and child stores do not share counters | Store tests |
+
+**Mutation found the window-expiry gap.** Deleting the expiry check failed
+nothing at first, because every burst test runs inside a single window —
+somebody rate-limited once would have stayed limited for the life of the
+process. That property now has its own test.
+
+One test was also wrong rather than the code: it asserted that flooding one
+phone number leaves another unaffected. They share the host bucket **on
+purpose** — a /24, so one household or hostel floor is one bucket — with a
+separate per-phone limit in the auth service. It now asserts the property that
+is real.
+
+**A judgement call left for the owner.** Six code requests an hour per /24 is
+tight behind carrier-grade NAT, where far more than one household shares an
+address. Loosening it costs real money in SMS abuse, so it is a product decision
+rather than an engineering one, and it is recorded here rather than changed
+quietly.
+
 ### Migrations, against a database that already has somebody in it
 
     npm test -w @ogt/api    # tests/migrations.test.ts
@@ -1075,7 +1134,7 @@ Nothing here rests on being believed.
 
 ```bash
 npm install
-npm test --workspaces                      # 523 tests: 53 core, 91 og, 248 api, 131 web
+npm test --workspaces                      # 533 tests: 53 core, 91 og, 258 api, 131 web
 npm run typecheck --workspaces             # four packages, strict
 npm audit --omit=dev                       # 0 production vulnerabilities
 cd packages/contracts && forge test        # 116 tests

@@ -23,6 +23,7 @@
 
 import fp from 'fastify-plugin'
 import rateLimit from '@fastify/rate-limit'
+import { CountingStore } from './counting-store.ts'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { truncateIp } from '../services/auth.ts'
 
@@ -108,6 +109,18 @@ async function ipPlugin(app: FastifyInstance): Promise<void> {
     // Nothing is limited by default; this registration exists to provide
     // createRateLimit, and every limiter below is applied explicitly.
     global: false,
+    /*
+     * The library's own store hands its callback the object it keeps rather
+     * than a copy, and the count is read after an await — so under concurrency
+     * every request in the same tick reads the total instead of its own
+     * position. Eight arriving together on a six-per-hour limit are all
+     * refused, including the six that were within it.
+     *
+     * That is the normal case here, not an edge one: a whole carrier behind one
+     * NAT is how this market reaches the internet, and nobody floods an
+     * endpoint politely. See counting-store.ts.
+     */
+    store: CountingStore as never,
   })
 
   /*
