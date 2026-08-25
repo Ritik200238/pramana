@@ -79,7 +79,35 @@ fork of live Galileo with the contracts actually deployed: derive the owner
 account, sign EIP-712, relay and pay, then read back that the record and the
 coach belong to the user rather than to whoever paid.
 
-### 0G Chain — live and forked
+### 0G Chain — DEPLOYED AND EXERCISED LIVE
+
+Both contracts are on 0G Galileo (chain 16602), and both were used after
+deployment rather than merely deployed:
+
+| | Address |
+|---|---|
+| `HealthRecordAnchor` | `0x75016F7ce345E0527d20B5E08f273E42886D35A5` |
+| `CoachAgent` | `0x52c576686Ee095DF9C04cbFB09c6BE1A775F04e7` |
+
+| Operation | Block | Gas | Transaction |
+|---|---|---|---|
+| `anchorSnapshot` | 51,230,061 | 117,025 | `0x1bd5dfe15bdc453d038daee0a8b5195d55f9a4782f8c83b24d2b0a520de76d26` |
+| `mintCoach` | 51,230,106 | 168,303 | `0x86be42668921f33bdb0b9e3f33cff8aae86b8cf112b845bd7cfa5f11b4a65dde` |
+
+`snapshotCount` reads back 1 and `ownerOf(1)` returns the owner, both from the
+live chain. Deployment cost about 0.0193 0G in total.
+
+The fork estimates held: 116,899 predicted against 117,025 actual, and 168,230
+against 168,303. That is worth recording as evidence the fork testing was
+telling the truth, not only as a gas figure.
+
+**What only a live broadcast could show.** The first transaction after
+deployment was rejected — 0G enforces a minimum 2 gwei priority fee, and `cast`
+defaults to a 1 wei tip. Anvil accepted it. The application clients turned out
+to be unaffected, because ethers reads the chain's own fee data and gets 4 gwei;
+checking that before changing them avoided a pointless fix.
+
+### 0G Chain — the fork harness
 
 - Galileo is reachable and reports chain id `0x40da` = **16602**. Some older
   documentation still says 16601; 16602 is what the network actually returns.
@@ -192,9 +220,14 @@ suite that goes green because it did nothing is worse than one that fails.
 OG_ROUTER_API_KEY=sk-... npm run test:live -w @ogt/og
 ```
 
-### Contracts on the live network
+### Contracts on the live network — CLOSED
 
-**Status: deployed and exercised on a fork, never broadcast.**
+Deployed and exercised on Galileo. See "0G Chain — DEPLOYED AND EXERCISED LIVE"
+above for addresses, blocks, gas and transaction hashes.
+
+The text below is kept for the record of what it looked like before that.
+
+**Status when written: deployed and exercised on a fork, never broadcast.**
 
 The anchoring path is now complete and end-to-end verified against a fork of
 live Galileo with the contract actually deployed: the worker reads pending
