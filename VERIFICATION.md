@@ -7,7 +7,59 @@ reproducible from a command in this repo or explicitly marked as unverified.
 Nothing here is aspirational. If a row says NOT VERIFIED, it means we could not
 demonstrate it, not that we expect it to fail.
 
-Last updated: 2026-08-24.
+Last updated: 2026-08-25.
+
+---
+
+## Check it yourself, without trusting this file
+
+    npm run evidence
+
+Reads every 0G claim back off public infrastructure — the Galileo RPC and the
+deployed contracts. **No private key, no funds, no configuration**: every call
+is a read, and it works from a fresh clone. It verifies that the contracts have
+bytecode at the addresses claimed, that the end-to-end run's anchoring
+transaction is in the block it says and was sent to the contract it says, that
+the relayer paid for it, that coach tokens are owned by addresses which are not
+the relayer, and that the coach whose owner kept teaching it carries a second
+version.
+
+Output at block 51,235,317:
+
+```
+The chain
+  [PASS] reachable, and is 0G Galileo — chain id 16602
+  [PASS] producing blocks — head at block 51235317
+
+The contracts exist on it
+  [PASS] HealthRecordAnchor has bytecode — 6623 bytes at 0x75016F7ce345E0527d20B5E08f273E42886D35A5
+  [PASS] CoachAgent has bytecode — 12777 bytes at 0x52c576686Ee095DF9C04cbFB09c6BE1A775F04e7
+
+The pipeline transaction is on it
+  [PASS] the end-to-end run anchored a snapshot — block 51231709, 147008 gas, 1 event(s)
+  [PASS] and it was sent to HealthRecordAnchor
+  [PASS] paid for by the relayer, not by the record owner
+
+The coach is a token somebody owns, and it changes as it learns
+  [PASS] token 6 — owner 0x0015e4A6…ac757, 1 version, that owner holds 1
+  [PASS]   its owner is not the relayer that paid for it
+  [PASS] token 8 — owner 0xCDe6c483…5d282b, 2 versions, that owner holds 1
+  [PASS]   its owner is not the relayer that paid for it
+  [PASS] a coach that learned more recorded a second version — versionCount(8) = 2
+```
+
+If you would rather not run our code at all, the same numbers are on somebody
+else's page:
+
+- [HealthRecordAnchor](https://chainscan-galileo.0g.ai/address/0x75016F7ce345E0527d20B5E08f273E42886D35A5)
+- [CoachAgent](https://chainscan-galileo.0g.ai/address/0x52c576686Ee095DF9C04cbFB09c6BE1A775F04e7)
+- [The pipeline's anchoring transaction](https://chainscan-galileo.0g.ai/tx/0xd68b35dc830dbac369dc3b316ff9d995dacd362d0f20eee57b0417b4a7b9f19c)
+
+The check found its own first defect on the first run: it asked the contract for
+`coachCount`, which is a name the TypeScript client uses for `balanceOf`, so the
+call hit no function and came back empty and the run reported the token
+unreadable. The contract was right and the check was wrong — the more useful
+direction for a check to fail in.
 
 ---
 
@@ -155,15 +207,31 @@ Measured against Galileo at block 51,177,774:
 
 At the observed 4 gwei that is roughly 0.0178 0G to deploy.
 
-### Performance, measured rather than asserted
+### Performance, measured rather than asserted — and re-takeable
 
-Query plans taken against real Postgres with realistic row counts, not reasoned
-about. Both checks came back clean, and one of them talked me out of a change.
+    npm run bench -w @ogt/api
+
+These numbers used to be measured once by hand and written down here, which made
+them a claim: nobody reading them could check them, and nothing noticed when a
+change turned an index scan into a sequential one. The command above seeds the
+row counts, runs `EXPLAIN ANALYZE` on the queries the application issues, and
+**exits non-zero if a plan has degraded**.
 
 | Query | Scale | Plan | Time |
 |---|---|---|---|
-| Personal food search | 60,300 rows, 300 per user | Bitmap index scan on `user_foods_unique_idx`, top-N heapsort | 1.16 ms |
-| Users due for a snapshot | 50,000 users, 49,045 with recent snapshots | Merge anti join, index-only both sides | 9.7 ms |
+| Personal food search | 60,300 rows, 300 per user | Bitmap index scan on `user_foods_unique_idx`, top-N heapsort | 1.7 ms |
+| Users due for a snapshot | 50,000 users, 49,045 with recent snapshots | Anti join, indexed on the probe side | 12.6 ms |
+| Session lookup by token hash | 5,000 sessions | Index scan on `sessions_token_hash_unique` | 0.05 ms |
+
+Run on PGlite — PostgreSQL 18 compiled to WebAssembly — so the planner is
+genuine Postgres and the plan shapes are the real ones. The milliseconds belong
+to whichever machine runs it and are **not** a claim about server latency. The
+plan is the durable evidence; a bitmap index scan stays one on hardware.
+
+Checked by breaking it: with index scans disabled in the planner all three
+checks fail and the run exits 1, and with them enabled all three pass. A guard
+that cannot fail is decoration, and this repository has shipped several of
+those.
 
 The food search orders by `times_logged` with no index on it, which looks like a
 missing index until you read the query: the filter is `ILIKE '%term%'`, a leading
